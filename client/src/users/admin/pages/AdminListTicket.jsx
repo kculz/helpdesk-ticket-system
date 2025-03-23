@@ -1,0 +1,263 @@
+import React, { useState } from 'react';
+import { useQuery, useMutation } from '@apollo/client';
+import { GET_ALL_TICKETS } from '../../../apollo/queries';
+import Loader from '../components/Loader';
+import { ASSIGN_TICKET, UPDATE_TICKET_STATUS } from '../../../apollo/mutations';
+
+const AdminTicketList = () => {
+  const [filters, setFilters] = useState({
+    status: 'all',
+    priority: 'all',
+  });
+  const [sortBy, setSortBy] = useState('createdAt');
+  const [sortDirection, setSortDirection] = useState('desc');
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [agentId, setAgentId] = useState('');
+
+  // Fetch all tickets
+  const { data, loading, error, refetch } = useQuery(GET_ALL_TICKETS);
+
+  // Mutations
+  const [assignTicket] = useMutation(ASSIGN_TICKET, {
+    onCompleted: () => {
+      setSelectedTicket(null);
+      refetch();
+    }
+  });
+
+  const [updateTicketStatus] = useMutation(UPDATE_TICKET_STATUS, {
+    onCompleted: () => refetch()
+  });
+
+  if (loading) return <Loader type="spinner" />;
+  if (error) return <p>Error: {error.message}</p>;
+
+  const tickets = data?.getAllTickets || [];
+
+  // Filter and sort tickets
+  const filteredTickets = tickets.filter(ticket => {
+    if (filters.status !== 'all' && ticket.status !== filters.status) return false;
+    if (filters.priority !== 'all' && ticket.priority !== filters.priority) return false;
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === 'createdAt') {
+      return sortDirection === 'desc' 
+        ? new Date(b.createdAt) - new Date(a.createdAt)
+        : new Date(a.createdAt) - new Date(b.createdAt);
+    }
+    // Add more sorting options as needed
+    return 0;
+  });
+
+  const handleStatusChange = (ticketId, newStatus) => {
+    updateTicketStatus({
+      variables: { id: ticketId, status: newStatus }
+    });
+  };
+
+  const handleAssign = () => {
+    if (!selectedTicket || !agentId) return;
+    
+    assignTicket({
+      variables: { 
+        ticketId: selectedTicket, 
+        agentId: agentId 
+      }
+    });
+  };
+
+  const getStatusBadgeClass = (status) => {
+    switch(status) {
+      case 'open':
+        return 'bg-yellow-500';
+      case 'in-progress':
+        return 'bg-primary';
+      case 'resolved':
+        return 'bg-green-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
+  const getPriorityBadgeClass = (priority) => {
+    switch(priority) {
+      case 'high':
+        return 'bg-red-500';
+      case 'medium':
+        return 'bg-orange-500';
+      case 'low':
+        return 'bg-blue-500';
+      default:
+        return 'bg-gray-500';
+    }
+  };
+
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold text-foreground mb-4">Ticket Management</h1>
+      
+      {/* Filters */}
+      <div className="bg-card p-4 rounded-xl shadow-soft border border-border mb-6">
+        <div className="flex flex-wrap gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Status</label>
+            <select 
+              className="px-3 py-2 bg-background border border-border rounded-md"
+              value={filters.status}
+              onChange={(e) => setFilters({...filters, status: e.target.value})}
+            >
+              <option value="all">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="in-progress">In Progress</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Priority</label>
+            <select 
+              className="px-3 py-2 bg-background border border-border rounded-md"
+              value={filters.priority}
+              onChange={(e) => setFilters({...filters, priority: e.target.value})}
+            >
+              <option value="all">All Priorities</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Sort By</label>
+            <select 
+              className="px-3 py-2 bg-background border border-border rounded-md"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+            >
+              <option value="createdAt">Date Created</option>
+              <option value="priority">Priority</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium mb-1">Direction</label>
+            <select 
+              className="px-3 py-2 bg-background border border-border rounded-md"
+              value={sortDirection}
+              onChange={(e) => setSortDirection(e.target.value)}
+            >
+              <option value="desc">Newest First</option>
+              <option value="asc">Oldest First</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      
+      {/* Tickets Table */}
+      <div className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-border">
+            <thead className="bg-background">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-card divide-y divide-border">
+              {filteredTickets.length > 0 ? (
+                filteredTickets.map((ticket) => (
+                  <tr key={ticket.id} className="hover:bg-background">
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">#{ticket.id.slice(-6)}</td>
+                    <td className="px-6 py-4 text-sm">{ticket.description.length > 50 ? ticket.description.substring(0, 50) + '...' : ticket.description}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 text-xs rounded-full text-white ${getStatusBadgeClass(ticket.status)}`}>
+                        {ticket.status}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <span className={`px-2 py-1 text-xs rounded-full text-white ${getPriorityBadgeClass(ticket.priority)}`}>
+                        {ticket.priority}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {new Date(ticket.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {ticket.user?.fullname || 'Unknown'}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex space-x-2">
+                        <button
+                          className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
+                          onClick={() => setSelectedTicket(ticket.id)}
+                        >
+                          Assign
+                        </button>
+                        <select
+                          className="border rounded text-xs px-2"
+                          value={ticket.status}
+                          onChange={(e) => handleStatusChange(ticket.id, e.target.value)}
+                        >
+                          <option value="open">Open</option>
+                          <option value="in-progress">In Progress</option>
+                          <option value="resolved">Resolved</option>
+                        </select>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan="7" className="px-6 py-4 text-center text-sm text-gray-500">
+                    No tickets found
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      
+      {/* Assign Ticket Modal */}
+      {selectedTicket && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-card p-6 rounded-xl shadow-lg w-96">
+            <h3 className="text-lg font-semibold mb-4">Assign Ticket</h3>
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Agent ID</label>
+              <input
+                type="text"
+                className="w-full px-3 py-2 border border-border rounded-md"
+                value={agentId}
+                onChange={(e) => setAgentId(e.target.value)}
+                placeholder="Enter agent ID"
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 bg-gray-200 text-gray-800 rounded"
+                onClick={() => setSelectedTicket(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-primary text-white rounded"
+                onClick={handleAssign}
+                disabled={!agentId}
+              >
+                Assign
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default AdminTicketList;
