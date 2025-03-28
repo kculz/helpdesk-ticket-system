@@ -1,33 +1,20 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation } from '@apollo/client';
+import { useQuery } from '@apollo/client';
+import { useNavigate } from 'react-router-dom';
 import { GET_ALL_TICKETS } from '../../../apollo/queries';
 import Loader from '../components/Loader';
-import { ASSIGN_TICKET, UPDATE_TICKET_STATUS } from '../../../apollo/mutations';
 
 const AdminTicketList = () => {
+  const navigate = useNavigate();
   const [filters, setFilters] = useState({
     status: 'all',
     priority: 'all',
   });
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDirection, setSortDirection] = useState('desc');
-  const [selectedTicket, setSelectedTicket] = useState(null);
-  const [agentId, setAgentId] = useState('');
 
   // Fetch all tickets
-  const { data, loading, error, refetch } = useQuery(GET_ALL_TICKETS);
-
-  // Mutations
-  const [assignTicket] = useMutation(ASSIGN_TICKET, {
-    onCompleted: () => {
-      setSelectedTicket(null);
-      refetch();
-    }
-  });
-
-  const [updateTicketStatus] = useMutation(UPDATE_TICKET_STATUS, {
-    onCompleted: () => refetch()
-  });
+  const { data, loading, error } = useQuery(GET_ALL_TICKETS);
 
   if (loading) return <Loader type="spinner" />;
   if (error) return <p>Error: {error.message}</p>;
@@ -45,60 +32,40 @@ const AdminTicketList = () => {
         ? new Date(b.createdAt) - new Date(a.createdAt)
         : new Date(a.createdAt) - new Date(b.createdAt);
     }
-    // Add more sorting options as needed
     return 0;
   });
 
-  const handleStatusChange = (ticketId, newStatus) => {
-    updateTicketStatus({
-      variables: { id: ticketId, status: newStatus }
-    });
-  };
-
-  const handleAssign = () => {
-    if (!selectedTicket || !agentId) return;
-    
-    assignTicket({
-      variables: { 
-        ticketId: selectedTicket, 
-        agentId: agentId 
-      }
-    });
+  // Handle ticket navigation
+  const handleTicketView = (ticketId) => {
+    navigate(`/admin/ticket/${ticketId}`);
   };
 
   const getStatusBadgeClass = (status) => {
     switch(status) {
-      case 'open':
-        return 'bg-yellow-500';
-      case 'in-progress':
-        return 'bg-primary';
-      case 'resolved':
-        return 'bg-green-500';
-      default:
-        return 'bg-gray-500';
+      case 'open': return 'bg-yellow-500';
+      case 'in-progress': return 'bg-primary';
+      case 'resolved': return 'bg-green-500';
+      default: return 'bg-gray-500';
     }
   };
 
   const getPriorityBadgeClass = (priority) => {
     switch(priority) {
-      case 'high':
-        return 'bg-red-500';
-      case 'medium':
-        return 'bg-orange-500';
-      case 'low':
-        return 'bg-blue-500';
-      default:
-        return 'bg-gray-500';
+      case 'high': return 'bg-red-500';
+      case 'medium': return 'bg-orange-500';
+      case 'low': return 'bg-blue-500';
+      default: return 'bg-gray-500';
     }
   };
 
   return (
-    <div>
+    <div className="p-6">
       <h1 className="text-2xl font-semibold text-foreground mb-4">Ticket Management</h1>
       
       {/* Filters */}
       <div className="bg-card p-4 rounded-xl shadow-soft border border-border mb-6">
         <div className="flex flex-wrap gap-4">
+          {/* Status Filter */}
           <div>
             <label className="block text-sm font-medium mb-1">Status</label>
             <select 
@@ -113,6 +80,7 @@ const AdminTicketList = () => {
             </select>
           </div>
           
+          {/* Priority Filter */}
           <div>
             <label className="block text-sm font-medium mb-1">Priority</label>
             <select 
@@ -127,6 +95,7 @@ const AdminTicketList = () => {
             </select>
           </div>
           
+          {/* Sort By */}
           <div>
             <label className="block text-sm font-medium mb-1">Sort By</label>
             <select 
@@ -135,10 +104,10 @@ const AdminTicketList = () => {
               onChange={(e) => setSortBy(e.target.value)}
             >
               <option value="createdAt">Date Created</option>
-              <option value="priority">Priority</option>
             </select>
           </div>
           
+          {/* Sort Direction */}
           <div>
             <label className="block text-sm font-medium mb-1">Direction</label>
             <select 
@@ -171,9 +140,17 @@ const AdminTicketList = () => {
             <tbody className="bg-card divide-y divide-border">
               {filteredTickets.length > 0 ? (
                 filteredTickets.map((ticket) => (
-                  <tr key={ticket.id} className="hover:bg-background">
+                  <tr 
+                    key={ticket.id} 
+                    className="hover:bg-background cursor-pointer"
+                    onClick={() => handleTicketView(ticket.id)}
+                  >
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">#{ticket.id.slice(-6)}</td>
-                    <td className="px-6 py-4 text-sm">{ticket.description.length > 50 ? ticket.description.substring(0, 50) + '...' : ticket.description}</td>
+                    <td className="px-6 py-4 text-sm">
+                      {ticket.description.length > 50 
+                        ? ticket.description.substring(0, 50) + '...' 
+                        : ticket.description}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 py-1 text-xs rounded-full text-white ${getStatusBadgeClass(ticket.status)}`}>
                         {ticket.status}
@@ -194,19 +171,14 @@ const AdminTicketList = () => {
                       <div className="flex space-x-2">
                         <button
                           className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
-                          onClick={() => setSelectedTicket(ticket.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Add any specific action for this button
+                            console.log(`Action for ticket ${ticket.id}`);
+                          }}
                         >
-                          Assign
+                          Details
                         </button>
-                        <select
-                          className="border rounded text-xs px-2"
-                          value={ticket.status}
-                          onChange={(e) => handleStatusChange(ticket.id, e.target.value)}
-                        >
-                          <option value="open">Open</option>
-                          <option value="in-progress">In Progress</option>
-                          <option value="resolved">Resolved</option>
-                        </select>
                       </div>
                     </td>
                   </tr>
@@ -222,40 +194,6 @@ const AdminTicketList = () => {
           </table>
         </div>
       </div>
-      
-      {/* Assign Ticket Modal */}
-      {selectedTicket && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-card p-6 rounded-xl shadow-lg w-96">
-            <h3 className="text-lg font-semibold mb-4">Assign Ticket</h3>
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-1">Agent ID</label>
-              <input
-                type="text"
-                className="w-full px-3 py-2 border border-border rounded-md"
-                value={agentId}
-                onChange={(e) => setAgentId(e.target.value)}
-                placeholder="Enter agent ID"
-              />
-            </div>
-            <div className="flex justify-end space-x-2">
-              <button
-                className="px-4 py-2 bg-gray-200 text-gray-800 rounded"
-                onClick={() => setSelectedTicket(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-2 bg-primary text-white rounded"
-                onClick={handleAssign}
-                disabled={!agentId}
-              >
-                Assign
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

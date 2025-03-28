@@ -1,11 +1,87 @@
 const ChatMessage = require("../../models/ChatMessage");
 const Ticket = require("../../models/Ticket");
 const { OpenAI } = require("openai");
+const WebSocket = require('ws');
+const { createServer } = require('http');
+const { PubSub } = require('graphql-subscriptions');
+
+const pubsub = new PubSub();
 
 // Initialize OpenAI
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
+
+// WebSocket Server Setup
+const server = createServer();
+const wss = new WebSocket.Server({ server });
+
+// Store connected clients
+const clients = new Map();
+
+wss.on('connection', (ws, req) => {
+  const ticketId = req.url.split('=')[1]; // Extract ticketId from URL
+  console.log(`New WebSocket connection for ticket ${ticketId}`);
+  
+  // Store the connection
+  if (!clients.has(ticketId)) {
+    clients.set(ticketId, new Set());
+  }
+  clients.get(ticketId).add(ws);
+
+  // Handle messages from client
+  ws.on('message', (message) => {
+    console.log(`Received message for ticket ${ticketId}: ${message}`);
+    // You can add custom message handling here
+  });
+
+  // Handle connection close
+  ws.on('close', () => {
+    clients.get(ticketId).delete(ws);
+    if (clients.get(ticketId).size === 0) {
+      clients.delete(ticketId);
+    }
+  });
+});
+
+// Start WebSocket server
+const WS_PORT = process.env.WS_PORT || 8081;
+server.listen(WS_PORT, () => {
+  console.log(`WebSocket server running on port ${WS_PORT}`);
+});
+
+// Function to broadcast to all clients for a ticket
+const broadcastToTicket = (ticketId, message) => {
+  if (clients.has(ticketId)) {
+    const messageString = JSON.stringify(message);
+    for (const client of clients.get(ticketId)) {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(messageString);
+      }
+    }
+  }
+};
+
+// Function to initiate a call
+const initiateCall = async (ticketId, userId, type = 'audio') => {
+  const callDetails = {
+    type,
+    ticketId,
+    callId: `call_${Date.now()}`,
+    participants: [userId, 'admin'],
+    timestamp: new Date().toISOString()
+  };
+
+  // Broadcast call initiation
+  broadcastToTicket(ticketId, {
+    type: 'call_initiated',
+    ...callDetails
+  });
+
+  pubsub.publish(`CALL_INITIATED_${ticketId}`, { callInitiated: callDetails });
+
+  return callDetails;
+};
 
 const chatResolvers = {
   Query: {
@@ -27,7 +103,7 @@ const chatResolvers = {
   Mutation: {
     sendMessage: async (_, { ticketId, sender, message }) => {
       try {
-        // Save the user's message
+        // Save the message
         const chatMessage = new ChatMessage({
           ticketId,
           sender,
@@ -35,31 +111,34 @@ const chatResolvers = {
           createdAt: new Date(),
         });
 
-        const savedUserMessage = await chatMessage.save();
+        const savedMessage = await chatMessage.save();
 
-        // Convert to object and explicitly add `id`
-        const userMessage = {
-          id: savedUserMessage._id.toString(),
-          sender: savedUserMessage.sender,
-          message: savedUserMessage.message,
-          createdAt: savedUserMessage.createdAt,
+        const messageObject = {
+          id: savedMessage._id.toString(),
+          sender: savedMessage.sender,
+          message: savedMessage.message,
+          createdAt: savedMessage.createdAt,
         };
 
-        // Fetch the ticket to check its priority
+        // Broadcast the message
+        broadcastToTicket(ticketId, {
+          type: 'new_message',
+          message: messageObject
+        });
+
+        pubsub.publish(`MESSAGE_SENT_${ticketId}`, { messageSent: messageObject });
+
+        // Fetch ticket to check priority
         const ticket = await Ticket.findById(ticketId);
         if (!ticket) {
           console.warn("Ticket not found, returning only user message.");
-          return userMessage; // Return the user's message
+          return messageObject;
         }
 
         let aiMessageObject = null;
 
-        // Check ticket priority
         if (ticket.priority === "low" || ticket.priority === "medium") {
-          // Generate an AI response for low/medium priority tickets
-          const ticketDescription = ticket.description;
-
-          const prompt = `The user has submitted a troubleshooting ticket with the following description: "${ticketDescription}". They have now sent the following message: "${message}". Provide a helpful response to their message.`;
+          const prompt = `The user has submitted a troubleshooting ticket with the following description: "${ticket.description}". They have now sent the following message: "${message}". Provide a helpful response to their message.`;
 
           try {
             const openaiResponse = await openai.chat.completions.create({
@@ -79,7 +158,6 @@ const chatResolvers = {
 
             const savedAIMessage = await aiChatMessage.save();
 
-            // Convert to object and explicitly add `id`
             aiMessageObject = {
               id: savedAIMessage._id.toString(),
               sender: savedAIMessage.sender,
@@ -87,23 +165,36 @@ const chatResolvers = {
               createdAt: savedAIMessage.createdAt,
             };
 
-            console.log("************ User Message *************", userMessage);
-            console.log("************ AI Message *************", aiMessageObject);
+            broadcastToTicket(ticketId, {
+              type: 'new_message',
+              message: aiMessageObject
+            });
+
+            pubsub.publish(`MESSAGE_SENT_${ticketId}`, { messageSent: aiMessageObject });
           } catch (aiError) {
             console.error("Error generating AI response:", aiError);
           }
         } else if (ticket.priority === "high") {
-          // Notify the admin for high priority tickets
-          console.log("High priority ticket. Admin intervention required.");
-          // You can add logic here to notify the admin (e.g., send an email or push notification)
+          try {
+            await initiateCall(ticketId, ticket.userId);
+          } catch (callError) {
+            console.error("Error initiating call:", callError);
+          }
         }
 
-        // Return the user's message (and AI message if applicable)
-        return aiMessageObject ? aiMessageObject : userMessage;
+        return aiMessageObject ? aiMessageObject : messageObject;
       } catch (error) {
         console.error("Error processing sendMessage mutation:", error);
         throw new Error("Failed to send message");
       }
+    },
+  },
+  Subscription: {
+    messageSent: {
+      subscribe: (_, { ticketId }) => pubsub.asyncIterator(`MESSAGE_SENT_${ticketId}`),
+    },
+    callInitiated: {
+      subscribe: (_, { ticketId }) => pubsub.asyncIterator(`CALL_INITIATED_${ticketId}`),
     },
   },
 };

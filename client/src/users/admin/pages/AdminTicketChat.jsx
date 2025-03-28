@@ -1,30 +1,32 @@
 import React, { useState, useEffect, useRef } from "react";
-import { FiSend, FiMic, FiPhone, FiVideo } from "react-icons/fi";
-import { useMutation, useQuery, useSubscription } from "@apollo/client";
-import { GET_CHAT_MESSAGES, GET_TICKET } from "../../../apollo/queries";
-import { SEND_MESSAGE, INITIATE_CALL } from "../../../apollo/mutations";
+import { useParams } from "react-router-dom";
+import { FiSend, FiPhone, FiCheckCircle, FiVideo } from "react-icons/fi";
+import { useQuery, useMutation, useSubscription } from "@apollo/client";
+import { GET_TICKET, GET_CHAT_MESSAGES } from "../../../apollo/queries";
+import { SEND_MESSAGE, UPDATE_TICKET_STATUS, INITIATE_CALL } from "../../../apollo/mutations";
 import { MESSAGE_SENT_SUBSCRIPTION, CALL_INITIATED_SUBSCRIPTION } from "../../../apollo/subscriptions";
 import Loader from "../components/Loader";
 
-const TicketChat = ({ ticketId }) => {
+const AdminTicketChat = () => {
+  const { id: ticketId } = useParams();
+  const chatEndRef = useRef(null);
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
-  const [ticket, setTicket] = useState(null);
   const [callStatus, setCallStatus] = useState(null);
-  const chatEndRef = useRef(null);
 
-  // Fetch initial messages and ticket data
-  const { data: messagesData } = useQuery(GET_CHAT_MESSAGES, {
+  // Queries
+  const { data: ticketData, loading: ticketLoading } = useQuery(GET_TICKET, {
+    variables: { id: ticketId }
+  });
+
+  const { data: messagesData, loading: messagesLoading } = useQuery(GET_CHAT_MESSAGES, {
     variables: { ticketId },
     fetchPolicy: "network-only"
   });
 
-  const { data: ticketData } = useQuery(GET_TICKET, {
-    variables: { id: ticketId },
-  });
-
   // Mutations
   const [sendMessage] = useMutation(SEND_MESSAGE);
+  const [updateTicketStatus] = useMutation(UPDATE_TICKET_STATUS);
   const [initiateCall] = useMutation(INITIATE_CALL);
 
   // Subscriptions
@@ -54,17 +56,14 @@ const TicketChat = ({ ticketId }) => {
     }
   });
 
-  // Initialize messages and ticket data
+  // Initialize messages
   useEffect(() => {
     if (messagesData?.getChatMessages) {
       setMessages(messagesData.getChatMessages);
     }
-    if (ticketData?.getTicket) {
-      setTicket(ticketData.getTicket);
-    }
-  }, [messagesData, ticketData]);
+  }, [messagesData]);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -77,14 +76,14 @@ const TicketChat = ({ ticketId }) => {
       await sendMessage({
         variables: {
           ticketId,
-          sender: "user",
+          sender: "admin",
           message: inputText,
         },
         optimisticResponse: {
           sendMessage: {
             __typename: "ChatMessage",
             id: `temp-${Date.now()}`,
-            sender: "user",
+            sender: "admin",
             message: inputText,
             createdAt: new Date().toISOString()
           }
@@ -111,17 +110,35 @@ const TicketChat = ({ ticketId }) => {
         }
       });
       setInputText("");
+
+      // Update status to in-progress if still open
+      if (ticketData?.getTicket?.status === 'OPEN') {
+        await updateTicketStatus({
+          variables: {
+            id: ticketId,
+            status: 'IN_PROGRESS'
+          }
+        });
+      }
     } catch (error) {
       console.error("Error sending message:", error);
     }
   };
 
-  const handleInitiateCall = async (type) => {
-    if (!ticket || ticket.priority !== "HIGH") {
-      alert("Calls can only be initiated for high priority tickets");
-      return;
+  const handleResolveTicket = async () => {
+    try {
+      await updateTicketStatus({
+        variables: {
+          id: ticketId,
+          status: 'RESOLVED'
+        }
+      });
+    } catch (error) {
+      console.error("Error resolving ticket:", error);
     }
+  };
 
+  const handleInitiateCall = async (type) => {
     try {
       const { data } = await initiateCall({
         variables: { 
@@ -141,16 +158,16 @@ const TicketChat = ({ ticketId }) => {
 
   const handleCallConnection = (callData) => {
     // Placeholder for WebRTC connection logic
-    // In a real application, you would:
-    // 1. Set up WebRTC peer connection
-    // 2. Establish connection using callData.callId
-    // 3. Handle signaling and media streams
     console.log("Call initiated:", callData);
     alert(`${callData.type.toUpperCase()} Call initiated. Call ID: ${callData.callId}`);
   };
 
+  if (ticketLoading || messagesLoading) return <Loader type="spinner" />;
+
+  const ticket = ticketData?.getTicket;
+
   return (
-    <div className="flex flex-col bg-background p-6 h-full">
+    <div className="flex flex-col bg-gray-50 h-screen p-6">
       {/* Priority and Call Buttons */}
       {ticket?.priority === "HIGH" && (
         <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded-r flex items-center justify-between">
@@ -176,6 +193,28 @@ const TicketChat = ({ ticketId }) => {
         </div>
       )}
 
+      {/* Ticket Details */}
+      <div className="mb-4 bg-white p-4 rounded-xl shadow-sm border border-border">
+        <h2 className="text-xl font-semibold mb-2">Ticket #{ticketId.slice(-6)}</h2>
+        <p className="text-gray-600 mb-3">{ticket?.description}</p>
+        <div className="flex justify-between">
+          <span className={`px-2 py-1 rounded-full text-xs ${
+            ticket?.status === 'OPEN' ? 'bg-yellow-100 text-yellow-800' :
+            ticket?.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' :
+            'bg-green-100 text-green-800'
+          }`}>
+            {ticket?.status?.toLowerCase().replace('_', '-')}
+          </span>
+          <span className={`px-2 py-1 rounded-full text-xs ${
+            ticket?.priority === 'HIGH' ? 'bg-red-100 text-red-800' :
+            ticket?.priority === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
+            'bg-blue-100 text-blue-800'
+          }`}>
+            {ticket?.priority?.toLowerCase()}
+          </span>
+        </div>
+      </div>
+
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto mb-6">
         <div className="max-w-2xl mx-auto">
@@ -183,16 +222,16 @@ const TicketChat = ({ ticketId }) => {
             <div
               key={msg.id}
               className={`flex ${
-                msg.sender === "user" ? "justify-end" : "justify-start"
+                msg.sender === "admin" ? "justify-end" : "justify-start"
               } mb-4`}
             >
               <div
                 className={`max-w-[70%] p-4 rounded-xl ${
-                  msg.sender === "user"
-                    ? "bg-primary text-white"
+                  msg.sender === "admin"
+                    ? "bg-blue-500 text-white"
                     : msg.sender === "ai"
-                    ? "bg-purple-100 text-foreground border border-purple-200"
-                    : "bg-card text-foreground border border-border"
+                    ? "bg-purple-100 text-gray-800 border border-purple-200"
+                    : "bg-gray-200 text-gray-800"
                 }`}
               >
                 <p className="text-sm">{msg.message}</p>
@@ -212,29 +251,36 @@ const TicketChat = ({ ticketId }) => {
       {/* Input Area */}
       <form
         onSubmit={handleSendMessage}
-        className="max-w-2xl mx-auto w-full bg-card p-4 rounded-xl border border-border"
+        className="max-w-2xl mx-auto w-full bg-white p-4 rounded-xl shadow-sm border border-border"
       >
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="p-2 text-foreground hover:text-primary transition"
-            onClick={() => alert("Audio recording coming soon")}
+            onClick={handleResolveTicket}
+            className={`flex items-center gap-1 px-3 py-2 rounded-lg ${
+              ticket?.status === 'RESOLVED'
+                ? 'bg-green-100 text-green-800'
+                : 'bg-green-500 text-white hover:bg-green-600'
+            } transition`}
+            disabled={ticket?.status === 'RESOLVED'}
           >
-            <FiMic size={20} />
+            <FiCheckCircle size={16} />
+            <span>{ticket?.status === 'RESOLVED' ? 'Resolved' : 'Resolve'}</span>
           </button>
 
           <input
             type="text"
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
-            placeholder="Type your message..."
-            className="flex-1 p-2 rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            placeholder="Type your response..."
+            className="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={ticket?.status === 'RESOLVED'}
           />
 
           <button
             type="submit"
-            className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition"
-            disabled={inputText.trim() === ""}
+            className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
+            disabled={ticket?.status === 'RESOLVED' || inputText.trim() === ''}
           >
             <FiSend size={20} />
           </button>
@@ -244,4 +290,4 @@ const TicketChat = ({ ticketId }) => {
   );
 };
 
-export default TicketChat;
+export default AdminTicketChat;

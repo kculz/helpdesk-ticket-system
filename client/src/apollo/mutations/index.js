@@ -55,6 +55,18 @@ export const SEND_MESSAGE = gql`
 `;
 
 
+// Initiate call for high priority ticket
+export const INITIATE_CALL = gql`
+  mutation InitiateCall($ticketId: ID!) {
+    initiateCall(ticketId: $ticketId) {
+      callId
+      participants
+      timestamp
+    }
+  }
+`;
+
+
 // Update User Role
 export const UPDATE_USER_ROLE = gql`
   mutation UpdateUserRole($userId: ID!, $role: String!) {

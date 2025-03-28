@@ -67,7 +67,7 @@ const VerifyOtp = () => {
         <p className="text-center text-foreground mt-4">
           Didn't receive the OTP?{" "}
           <button
-            onClick={() => navigate("/login")}
+            onClick={() => navigate("/")}
             className="text-primary hover:underline"
           >
             Resend OTP

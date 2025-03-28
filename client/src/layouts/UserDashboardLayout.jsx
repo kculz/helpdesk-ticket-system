@@ -2,24 +2,29 @@ import React, { useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom"; // Import useNavigate
 import { FiMenu, FiX, FiHome, FiUser, FiLogOut } from "react-icons/fi";
 import Header from "./Header";
+import { useDispatch } from "react-redux";
+import { logout } from "../redux/slices/authSlice"; // Import logout action
+
 
 const UserDashboardLayout = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate(); // Hook for navigation
+  const dispatch = useDispatch(); // Hook for Redux dispatch
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
 
   // Handle logout
+  // Enhanced logout with Redux
   const handleLogout = () => {
-    // Clear localStorage
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("isAuthenticated");
-
-    // Redirect to the login or home page
-    navigate("/"); // Change this to your login route if needed
+    // Dispatch logout action to clear Redux state
+    dispatch(logout());
+    
+    // Clear localStorage (redundant if your authSlice already does this)
+    
+    // Redirect to home page
+    navigate("/");
   };
 
   return (

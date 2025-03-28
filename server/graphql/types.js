@@ -27,11 +27,19 @@ const typeDefs = gql`
   type ChatMessage {
     id: ID!
     ticketId: ID!
-    sender: String!
+    sender: String!  # "user", "admin", "ai", or "system"
     message: String!
     createdAt: String!
   }
   
+  type CallDetails {
+    type: String!
+    ticketId: ID!
+    callId: String!
+    participants: [String!]!
+    timestamp: String!
+  }
+
   type AdminDashboardData {
     totalUsers: Int!
     totalTickets: Int!
@@ -106,12 +114,18 @@ const typeDefs = gql`
     createTicket(description: String!, priority: String): Ticket
     updateTicketStatus(id: ID!, status: String!): Ticket
     sendMessage(ticketId: ID!, sender: String!, message: String!): ChatMessage
+    initiateCall(ticketId: ID!): CallDetails
     
     # Admin Mutations
     updateUserRole(userId: ID!, role: String!): User
     deleteUser(userId: ID!): Boolean
     assignTicket(ticketId: ID!, agentId: ID!): Ticket
     createKBArticle(title: String!, content: String!, category: String!): KBArticle
+  }
+
+  type Subscription {
+    messageSent(ticketId: ID!): ChatMessage
+    callInitiated(ticketId: ID!): CallDetails
   }
 `;
 

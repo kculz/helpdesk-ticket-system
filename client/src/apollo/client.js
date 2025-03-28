@@ -1,24 +1,23 @@
-import { ApolloClient, createHttpLink, InMemoryCache } from '@apollo/client';
+import { ApolloClient, createHttpLink, InMemoryCache, split } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
+import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
+import { createClient } from 'graphql-ws';
+import { getMainDefinition } from '@apollo/client/utilities';
 
 const createApolloClient = (token) => {
   const httpLink = createHttpLink({
-    uri: `http://localhost:3000/graphql`, // Replace with your GraphQL endpoint
+    uri: `http://localhost:3000/graphql`, // Your HTTP endpoint
   });
 
   const authLink = setContext((operation, { headers }) => {
-    // List of operations that don't require the Authorization header
+    // Public operations that don't require auth
     const publicOperations = ['sendOtp', 'verifyOtp'];
-
-    // Check if the current operation is public
     const isPublicOperation = publicOperations.includes(operation.operationName);
 
-    // If the operation is public, don't include the Authorization header
     if (isPublicOperation) {
       return { headers };
     }
 
-    // For private operations, include the Authorization header
     return {
       headers: {
         ...headers,
@@ -27,9 +26,36 @@ const createApolloClient = (token) => {
     };
   });
 
+  // WebSocket link for subscriptions
+  const wsLink = new GraphQLWsLink(createClient({
+    url: `ws://localhost:3000/graphql`, // Your WebSocket endpoint
+    connectionParams: () => ({
+      authorization: token ? `Bearer ${token}` : "",
+    }),
+    shouldRetry: () => true, // Auto-reconnect
+  }));
+
+  // Split links based on operation type
+  const splitLink = split(
+    ({ query }) => {
+      const definition = getMainDefinition(query);
+      return (
+        definition.kind === 'OperationDefinition' &&
+        definition.operation === 'subscription'
+      );
+    },
+    wsLink,
+    authLink.concat(httpLink) // Chain auth with HTTP
+  );
+
   return new ApolloClient({
-    link: authLink.concat(httpLink), // Combine the authLink and httpLink
+    link: splitLink,
     cache: new InMemoryCache(),
+    defaultOptions: {
+      watchQuery: {
+        fetchPolicy: 'cache-and-network',
+      },
+    },
   });
 };
 
