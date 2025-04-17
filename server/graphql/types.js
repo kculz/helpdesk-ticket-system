@@ -1,6 +1,8 @@
 const { gql } = require("apollo-server-express");
 
 const typeDefs = gql`
+  scalar Upload
+
   type User {
     id: ID!
     workId: String
@@ -29,6 +31,8 @@ const typeDefs = gql`
     ticketId: ID!
     sender: String!  # "user", "admin", "ai", or "system"
     message: String!
+    messageType: String!  # "text" or "voice"
+    voiceUrl: String
     createdAt: String!
   }
   
@@ -79,6 +83,12 @@ const typeDefs = gql`
     createdAt: String!
   }
 
+  type TextToSpeechResponse {
+    success: Boolean!
+    voiceUrl: String
+    error: String
+  }
+
   type Query {
     getAllTickets: [Ticket] # Public
     getUserTickets: [Ticket!] # Private
@@ -113,8 +123,15 @@ const typeDefs = gql`
     ): User
     createTicket(description: String!, priority: String): Ticket
     updateTicketStatus(id: ID!, status: String!): Ticket
-    sendMessage(ticketId: ID!, sender: String!, message: String!): ChatMessage
+    sendMessage(
+      ticketId: ID!
+      sender: String!
+      message: String
+      messageType: String
+      voiceFile: Upload
+    ): ChatMessage
     initiateCall(ticketId: ID!): CallDetails
+    convertTextToSpeech(text: String!): TextToSpeechResponse
     
     # Admin Mutations
     updateUserRole(userId: ID!, role: String!): User

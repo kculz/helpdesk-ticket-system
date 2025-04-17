@@ -11,6 +11,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@google-cloud/storage": "^7.16.0",
     "@greycode/env_init": "^1.0.5",
     "@greycode/gitignore_init": "^0.0.2",
     "apollo-server-express": "^3.13.0",

@@ -48,6 +48,8 @@ export const GET_CHAT_MESSAGES = gql`
       id
       sender
       message
+      messageType
+      voiceUrl
       createdAt
     }
   }

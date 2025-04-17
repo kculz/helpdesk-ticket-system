@@ -4,6 +4,7 @@ const { OpenAI } = require("openai");
 const WebSocket = require('ws');
 const { createServer } = require('http');
 const { PubSub } = require('graphql-subscriptions');
+const { uploadFileToStorage } = require("../../helpers/storage");
 
 const pubsub = new PubSub();
 
@@ -12,30 +13,24 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// WebSocket Server Setup
+// WebSocket Server Setup (unchanged)
 const server = createServer();
 const wss = new WebSocket.Server({ server });
-
-// Store connected clients
 const clients = new Map();
 
 wss.on('connection', (ws, req) => {
-  const ticketId = req.url.split('=')[1]; // Extract ticketId from URL
+  const ticketId = req.url.split('=')[1];
   console.log(`New WebSocket connection for ticket ${ticketId}`);
   
-  // Store the connection
   if (!clients.has(ticketId)) {
     clients.set(ticketId, new Set());
   }
   clients.get(ticketId).add(ws);
 
-  // Handle messages from client
   ws.on('message', (message) => {
     console.log(`Received message for ticket ${ticketId}: ${message}`);
-    // You can add custom message handling here
   });
 
-  // Handle connection close
   ws.on('close', () => {
     clients.get(ticketId).delete(ws);
     if (clients.get(ticketId).size === 0) {
@@ -44,13 +39,11 @@ wss.on('connection', (ws, req) => {
   });
 });
 
-// Start WebSocket server
 const WS_PORT = process.env.WS_PORT || 8081;
 server.listen(WS_PORT, () => {
   console.log(`WebSocket server running on port ${WS_PORT}`);
 });
 
-// Function to broadcast to all clients for a ticket
 const broadcastToTicket = (ticketId, message) => {
   if (clients.has(ticketId)) {
     const messageString = JSON.stringify(message);
@@ -62,7 +55,6 @@ const broadcastToTicket = (ticketId, message) => {
   }
 };
 
-// Function to initiate a call
 const initiateCall = async (ticketId, userId, type = 'audio') => {
   const callDetails = {
     type,
@@ -72,7 +64,6 @@ const initiateCall = async (ticketId, userId, type = 'audio') => {
     timestamp: new Date().toISOString()
   };
 
-  // Broadcast call initiation
   broadcastToTicket(ticketId, {
     type: 'call_initiated',
     ...callDetails
@@ -83,15 +74,39 @@ const initiateCall = async (ticketId, userId, type = 'audio') => {
   return callDetails;
 };
 
+// New function to convert text to speech
+const textToSpeech = async (text) => {
+  try {
+    const response = await openai.audio.speech.create({
+      model: "tts-1",
+      voice: "alloy",
+      input: text,
+    });
+
+    // Convert the response to a buffer
+    const buffer = Buffer.from(await response.arrayBuffer());
+    
+    // Upload to storage and get URL
+    const voiceUrl = await uploadFileToStorage(buffer, 'audio/mpeg', `${Date.now()}.mp3`);
+    
+    return voiceUrl;
+  } catch (error) {
+    console.error("Error in text-to-speech conversion:", error);
+    throw error;
+  }
+};
+
 const chatResolvers = {
   Query: {
     getChatMessages: async (_, { ticketId }) => {
       try {
-        const messages = await ChatMessage.find({ ticketId });
+        const messages = await ChatMessage.find({ ticketId }).sort({ createdAt: 1 });
         return messages.map((msg) => ({
           id: msg._id.toString(),
           sender: msg.sender,
           message: msg.message,
+          messageType: msg.messageType || 'text', // Default to text if not set
+          voiceUrl: msg.voiceUrl,
           createdAt: msg.createdAt,
         }));
       } catch (error) {
@@ -101,13 +116,40 @@ const chatResolvers = {
     },
   },
   Mutation: {
-    sendMessage: async (_, { ticketId, sender, message }) => {
+    sendMessage: async (_, { ticketId, sender, message, messageType = 'text', voiceFile }) => {
       try {
+        let voiceUrl = null;
+        
+        // Handle voice message upload
+        if (messageType === 'voice' && voiceFile) {
+          const { createReadStream, filename, mimetype } = await voiceFile;
+          const stream = createReadStream();
+          
+          // Upload the voice file to storage
+          const chunks = [];
+          for await (const chunk of stream) {
+            chunks.push(chunk);
+          }
+          const buffer = Buffer.concat(chunks);
+          voiceUrl = await uploadFileToStorage(buffer, mimetype, filename);
+          
+          // If no transcript provided, use OpenAI to transcribe
+          if (!message) {
+            const transcription = await openai.audio.transcriptions.create({
+              file: buffer,
+              model: "whisper-1",
+            });
+            message = transcription.text;
+          }
+        }
+
         // Save the message
         const chatMessage = new ChatMessage({
           ticketId,
           sender,
           message,
+          messageType,
+          voiceUrl,
           createdAt: new Date(),
         });
 
@@ -117,6 +159,8 @@ const chatResolvers = {
           id: savedMessage._id.toString(),
           sender: savedMessage.sender,
           message: savedMessage.message,
+          messageType: savedMessage.messageType,
+          voiceUrl: savedMessage.voiceUrl,
           createdAt: savedMessage.createdAt,
         };
 
@@ -147,12 +191,24 @@ const chatResolvers = {
               max_tokens: 150,
             });
 
-            const aiMessage = openaiResponse.choices[0].message.content;
+            const aiMessageText = openaiResponse.choices[0].message.content;
+            let aiVoiceUrl = null;
+
+            // If user sent voice message, also generate voice response
+            if (messageType === 'voice') {
+              try {
+                aiVoiceUrl = await textToSpeech(aiMessageText);
+              } catch (ttsError) {
+                console.error("Error generating voice response:", ttsError);
+              }
+            }
 
             const aiChatMessage = new ChatMessage({
               ticketId,
               sender: "ai",
-              message: aiMessage,
+              message: aiMessageText,
+              messageType: messageType === 'voice' ? 'voice' : 'text',
+              voiceUrl: aiVoiceUrl,
               createdAt: new Date(),
             });
 
@@ -162,6 +218,8 @@ const chatResolvers = {
               id: savedAIMessage._id.toString(),
               sender: savedAIMessage.sender,
               message: savedAIMessage.message,
+              messageType: savedAIMessage.messageType,
+              voiceUrl: savedAIMessage.voiceUrl,
               createdAt: savedAIMessage.createdAt,
             };
 
@@ -186,6 +244,17 @@ const chatResolvers = {
       } catch (error) {
         console.error("Error processing sendMessage mutation:", error);
         throw new Error("Failed to send message");
+      }
+    },
+    
+    // New mutation to convert text to speech
+    convertTextToSpeech: async (_, { text }) => {
+      try {
+        const voiceUrl = await textToSpeech(text);
+        return { success: true, voiceUrl };
+      } catch (error) {
+        console.error("Error converting text to speech:", error);
+        return { success: false, error: error.message };
       }
     },
   },

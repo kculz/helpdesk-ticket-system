@@ -44,11 +44,25 @@ export const UPDATE_TICKET_STATUS = gql`
 `;
 
 export const SEND_MESSAGE = gql`
-  mutation SendMessage($ticketId: ID!, $sender: String!, $message: String!) {
-    sendMessage(ticketId: $ticketId, sender: $sender, message: $message) {
+  mutation SendMessage(
+    $ticketId: ID!
+    $sender: String!
+    $message: String
+    $messageType: String
+    $voiceFile: Upload
+  ) {
+    sendMessage(
+      ticketId: $ticketId
+      sender: $sender
+      message: $message
+      messageType: $messageType
+      voiceFile: $voiceFile
+    ) {
       id
       sender
       message
+      messageType
+      voiceUrl
       createdAt
     }
   }
@@ -59,9 +73,22 @@ export const SEND_MESSAGE = gql`
 export const INITIATE_CALL = gql`
   mutation InitiateCall($ticketId: ID!) {
     initiateCall(ticketId: $ticketId) {
+      type
+      ticketId
       callId
       participants
       timestamp
+    }
+  }
+`;
+
+// Text-to-speech conversion mutation
+export const CONVERT_TEXT_TO_SPEECH = gql`
+  mutation ConvertTextToSpeech($text: String!) {
+    convertTextToSpeech(text: $text) {
+      success
+      voiceUrl
+      error
     }
   }
 `;
