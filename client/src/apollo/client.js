@@ -1,16 +1,16 @@
-import { ApolloClient, createHttpLink, InMemoryCache, split } from '@apollo/client';
+import { ApolloClient, InMemoryCache, split } from '@apollo/client';
 import { setContext } from '@apollo/client/link/context';
 import { GraphQLWsLink } from '@apollo/client/link/subscriptions';
 import { createClient } from 'graphql-ws';
 import { getMainDefinition } from '@apollo/client/utilities';
+import { createUploadLink } from 'apollo-upload-client'; // ✅ use this for file uploads
 
 const createApolloClient = (token) => {
-  const httpLink = createHttpLink({
-    uri: `http://localhost:3000/graphql`, // Your HTTP endpoint
+  const uploadLink = createUploadLink({
+    uri: `http://localhost:3000/graphql`, // ✅ Same URI, just now supports file uploads
   });
 
   const authLink = setContext((operation, { headers }) => {
-    // Public operations that don't require auth
     const publicOperations = ['sendOtp', 'verifyOtp'];
     const isPublicOperation = publicOperations.includes(operation.operationName);
 
@@ -26,16 +26,14 @@ const createApolloClient = (token) => {
     };
   });
 
-  // WebSocket link for subscriptions
   const wsLink = new GraphQLWsLink(createClient({
-    url: `ws://localhost:3000/graphql`, // Your WebSocket endpoint
+    url: `ws://localhost:3000/graphql`,
     connectionParams: () => ({
       authorization: token ? `Bearer ${token}` : "",
     }),
-    shouldRetry: () => true, // Auto-reconnect
+    shouldRetry: () => true,
   }));
 
-  // Split links based on operation type
   const splitLink = split(
     ({ query }) => {
       const definition = getMainDefinition(query);
@@ -45,7 +43,7 @@ const createApolloClient = (token) => {
       );
     },
     wsLink,
-    authLink.concat(httpLink) // Chain auth with HTTP
+    authLink.concat(uploadLink) // ✅ use uploadLink instead of httpLink
   );
 
   return new ApolloClient({

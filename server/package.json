@@ -23,6 +23,7 @@
     "express": "^4.21.2",
     "graphql": "^16.10.0",
     "graphql-subscriptions": "^3.0.0",
+    "graphql-upload": "^13.0.0",
     "jsonwebtoken": "^9.0.2",
     "lodash": "^4.17.21",
     "mongoose": "^8.10.1",

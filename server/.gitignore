@@ -32,6 +32,8 @@ dist/
 *.DS_Store
 *.swp
 
+credentials.json
+uploads/*
 # Comments:
 # Ignore node_modules to avoid committing dependencies
 # Ignore logs to avoid committing log files

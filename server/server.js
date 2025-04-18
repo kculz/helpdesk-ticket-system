@@ -8,28 +8,35 @@ const authMiddleware = require("./middlewares/authMiddleware");
 // Import GraphQL schema and resolvers
 const typeDefs = require("./graphql/types");
 const resolvers = require("./graphql/resolvers");
+const { graphqlUploadExpress } = require("graphql-upload");
 
 const app = express();
-app.use(cors());
 
+// Apply middleware in the correct order
+app.use(cors());
+app.use(graphqlUploadExpress({ maxFileSize: 10000000, maxFiles: 1 }));
+app.use(express.json());
+
+// Database connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
-}).then(()=> {
-    console.log("db connected")
+}).then(() => {
+  console.log("DB connected successfully");
 }).catch((error) => {
-  console.log(`db connection error: ${error}`)
-})
+  console.log(`DB connection error: ${error}`);
+});
+
 
 
 const server = new ApolloServer({
   typeDefs,
   resolvers,
   context: ({ req }) => {
-    // Attach user from authMiddleware to context
     const user = authMiddleware(req);
     return { req, user };
   },
+  uploads: false
 });
 
 async function startServer() {
@@ -41,4 +48,6 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(error => {
+  console.error("Failed to start server:", error);
+});

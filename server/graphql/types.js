@@ -110,6 +110,8 @@ const typeDefs = gql`
     resolved: Int
   }
 
+  scalar Upload
+  
   type Mutation {
     sendOtp(email: String!): Boolean
     verifyOtp(email: String!, otp: String!): User

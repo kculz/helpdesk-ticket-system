@@ -5,6 +5,8 @@ const WebSocket = require('ws');
 const { createServer } = require('http');
 const { PubSub } = require('graphql-subscriptions');
 const { uploadFileToStorage } = require("../../helpers/storage");
+const path = require('path');
+const fs = require('fs');
 
 const pubsub = new PubSub();
 
@@ -121,27 +123,39 @@ const chatResolvers = {
         let voiceUrl = null;
         
         // Handle voice message upload
-        if (messageType === 'voice' && voiceFile) {
-          const { createReadStream, filename, mimetype } = await voiceFile;
+        if (messageType === "voice" && voiceFile) {
+          console.log("Voice file received:", voiceFile);
+          const file = await voiceFile.promise || (await voiceFile);
+          const { createReadStream, filename, mimetype } = file;
+        
+          // Path to save the uploaded file
+          const uploadDir = path.join(__dirname, '../../uploads');
+        
+          // Check if the 'uploads' directory exists, if not, create it
+          if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+            console.log(`Created directory: ${uploadDir}`);
+          }
+        
+          const uploadPath = path.join(uploadDir, filename);
           const stream = createReadStream();
           
-          // Upload the voice file to storage
-          const chunks = [];
-          for await (const chunk of stream) {
-            chunks.push(chunk);
-          }
-          const buffer = Buffer.concat(chunks);
-          voiceUrl = await uploadFileToStorage(buffer, mimetype, filename);
-          
-          // If no transcript provided, use OpenAI to transcribe
-          if (!message) {
-            const transcription = await openai.audio.transcriptions.create({
-              file: buffer,
-              model: "whisper-1",
-            });
-            message = transcription.text;
-          }
+          // Write the file to the uploads directory
+          const out = fs.createWriteStream(uploadPath);
+        
+          await new Promise((resolve, reject) => {
+            stream.pipe(out);
+            out.on("finish", resolve);
+            out.on("error", reject);
+          });
+        
+          // Set the file URL for further use
+          voiceUrl = `/uploads/${filename}`;
+          // For voice messages, we do not need a message (it will be empty)
+          message = ''; // Clear message field for voice type
         }
+        
+        
 
         // Save the message
         const chatMessage = new ChatMessage({
