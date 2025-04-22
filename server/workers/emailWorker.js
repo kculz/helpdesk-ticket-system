@@ -1,46 +1,93 @@
 require("dotenv").config();
 const nodemailer = require("nodemailer");
-const emailQueue = require("../queues/emailQueue");
+const Bull = require("bull");
 
-// Configure Nodemailer with curlben.com SMTP details
-const transporter = nodemailer.createTransport({
-  host: "mail.curlben.com", // Your SMTP server
-  port: 465, // Secure SMTP port
-  secure: true, // true for 465, false for other ports
-  auth: {
-    user: process.env.EMAIL_USERNAME || "no-reply@curlben.com",
-    pass: process.env.EMAIL_PASSWORD, // Use the email account's password
-  },
-  tls: {
-    // Ensure secure connection
-    rejectUnauthorized: false, // Set to true in production with valid SSL
+// Create the email queue
+const emailQueue = new Bull("emailQueue", {
+  redis: {
+    host: "127.0.0.1",
+    port: 6379,
   },
 });
 
-// Process jobs from the queue
+// Configure Nodemailer transporter
+const transporter = nodemailer.createTransport({
+  host: "mail.curlben.com",
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.EMAIL_USERNAME || "no-reply@curlben.com",
+    pass: process.env.EMAIL_PASSWORD,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
+
+// Process email jobs
 emailQueue.process(async (job) => {
-  const { email, otp } = job.data;
+  const { email, subject, template, context } = job.data;
+
+  // Define email templates
+  const templates = {
+    'otp': {
+      subject: "Your OTP Code",
+      text: `Your OTP is: ${context.otp}\n\nThis OTP will expire in 5 minutes.`,
+      html: `<p>Your OTP is: <strong>${context.otp}</strong></p>`
+    },
+    'technician-assignment': {
+      subject: "New Technical Ticket Assigned",
+      text: `
+        Hello ${context.technicianName},
+        
+        You have been assigned a new technical ticket (#${context.ticketId}).
+        
+        Priority: ${context.priority}
+        Requester: ${context.requesterName} (${context.requesterEmail})
+        
+        Description:
+        ${context.description}
+        
+        Please address this ticket promptly.
+      `,
+      html: `
+        <h2>New Technical Ticket Assigned</h2>
+        <p>Hello ${context.technicianName},</p>
+        <p>You have been assigned a new technical ticket (<strong>#${context.ticketId}</strong>).</p>
+        
+        <h3>Details:</h3>
+        <ul>
+          <li><strong>Priority:</strong> ${context.priority}</li>
+          <li><strong>Requester:</strong> ${context.requesterName} (${context.requesterEmail})</li>
+        </ul>
+        
+        <h3>Description:</h3>
+        <p>${context.description}</p>
+        
+        <p>Please address this ticket promptly.</p>
+      `
+    }
+  };
+
+  const selectedTemplate = templates[template] || templates['otp'];
 
   const mailOptions = {
-    from: `"Helpdesk Info" <no-reply@curlben.com>`, // Sender name + email
+    from: `"Helpdesk System" <no-reply@curlben.com>`,
     to: email,
-    subject: "Your OTP Code",
-    text: `Your OTP is: ${otp}\n\nThis OTP will expire in 5 minutes. Do not share it with anyone.`,
-    // Optional HTML version:
-    html: `
-      <p>Your OTP is: <strong>${otp}</strong></p>
-      <p>This OTP will expire in 5 minutes. Do not share it with anyone.</p>
-    `,
+    subject: subject || selectedTemplate.subject,
+    text: selectedTemplate.text,
+    html: selectedTemplate.html
   };
 
   try {
-    // Send email
     await transporter.sendMail(mailOptions);
-    console.log(`OTP sent to ${email}`);
+    console.log(`Email sent to ${email}`);
   } catch (error) {
-    console.error("Failed to send OTP:", error);
-    throw error; // Re-throw to retry the job if needed
+    console.error("Failed to send email:", error);
+    throw error;
   }
 });
 
 console.log("Email worker is running...");
+
+module.exports = emailQueue;

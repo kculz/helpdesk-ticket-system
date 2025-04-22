@@ -16,15 +16,17 @@ const typeDefs = gql`
   }
 
   type Ticket {
-    id: ID!
-    userId: ID!
-    description: String!
-    status: String!
-    priority: String!
-    createdAt: String!
-    assignedTo: ID
-    user: User
-  }
+  id: ID!
+  userId: ID!
+  description: String!
+  status: String!
+  priority: String!
+  category: String!
+  requiresTechnician: Boolean!
+  createdAt: String!
+  assignedTo: User  # Changed from ID to User
+  user: User
+}
 
   type ChatMessage {
     id: ID!
@@ -123,7 +125,12 @@ const typeDefs = gql`
       dept: String!
       role: String!
     ): User
-    createTicket(description: String!, priority: String): Ticket
+    createTicket(
+    description: String!
+    priority: String
+    category: String
+    requiresTechnician: Boolean 
+  ): Ticket
     updateTicketStatus(id: ID!, status: String!): Ticket
     sendMessage(
       ticketId: ID!

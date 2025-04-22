@@ -2,7 +2,7 @@ const jwt = require("jsonwebtoken");
 const redis = require("../../redis/client");
 const User = require("../../models/User");
 const generateOtp = require("../../helpers/otp");
-const emailQueue = require("../../queues/emailQueue");
+const emailQueue = require("../../workers/emailWorker");
 
 
 
@@ -15,7 +15,12 @@ const authResolvers = {
       await redis.set(`otp:${email}`, otp, "EX", process.env.OTP_TTL || 3000000);
       console.log(`OTP for ${email}: ${otp}`); // In production, send this OTP via email/SMS.
 
-      await emailQueue.add({ email, otp }); // Simulate sending OTP via email
+      await emailQueue.add({ 
+        email,  
+        subject: "Your OTP Code",
+        template: "otp",
+        context: { otp }
+      }); // Simulate sending OTP via email
       return true;
     },
 

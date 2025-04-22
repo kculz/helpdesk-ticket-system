@@ -22,12 +22,30 @@ export const VERIFY_OTP = gql`
 
 
 export const CREATE_TICKET = gql`
-  mutation CreateTicket($description: String!, $priority: String) {
-    createTicket(description: $description, priority: $priority) {
+  mutation CreateTicket(
+    $description: String!
+    $priority: String
+    $category: String!
+    $requiresTechnician: Boolean!
+  ) {
+    createTicket(
+      description: $description
+      priority: $priority
+      category: $category
+      requiresTechnician: $requiresTechnician
+    ) {
       id
       description
       status
       priority
+      category
+      requiresTechnician
+      assignedTo {
+        id
+        fullname
+        email
+        dept
+      }
       createdAt
     }
   }
