@@ -1,5 +1,5 @@
-import { Navigate, Outlet } from "react-router-dom";
 import { useSelector } from "react-redux";
+import { Navigate, Outlet } from "react-router-dom";
 
 export const ProtectedRoutes = () => {
   const { isAuthenticated, role } = useSelector((state) => state.auth);
@@ -13,8 +13,8 @@ export const ProtectedRoutes = () => {
   }
 
   // Render nested routes based on role
-  if (role === "admin" || role === "user") {
-    return <Outlet />; // Render nested routes for admin or user
+  if (role === "admin" || role === "technician" || role === "user") {
+    return <Outlet />; // Render nested routes for admin, technician, or user
   }
 
   // Default fallback (if role is not recognized)

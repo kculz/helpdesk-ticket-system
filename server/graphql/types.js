@@ -10,34 +10,34 @@ const typeDefs = gql`
     phone: String!
     email: String!
     dept: String!
-    role: String!  # "admin" or "user" (default: user)
+    role: String!  # "admin", "technician", or "user" (default: user)
     token: String
     createdAt: String
   }
 
   type Ticket {
-  id: ID!
-  userId: ID!
-  description: String!
-  status: String!
-  priority: String!
-  category: String!
-  requiresTechnician: Boolean!
-  createdAt: String!
-  assignedTo: User  # Changed from ID to User
-  user: User
-}
+    id: ID!
+    userId: ID!
+    description: String!
+    status: String!
+    priority: String!
+    category: String!
+    requiresTechnician: Boolean!
+    createdAt: String!
+    assignedTo: User  # Changed from ID to User
+    user: User
+  }
 
   type ChatMessage {
     id: ID!
     ticketId: ID!
-    sender: String!  # "user", "admin", "ai", or "system"
+    sender: String!
     message: String!
-    messageType: String!  # "text" or "voice"
+    messageType: String!
     voiceUrl: String
     createdAt: String!
   }
-  
+
   type CallDetails {
     type: String!
     ticketId: ID!
@@ -91,6 +91,25 @@ const typeDefs = gql`
     error: String
   }
 
+  type TechnicianTicket {
+  id: ID!
+  description: String!
+  status: String!
+  priority: String!
+  category: String!
+  requiresTechnician: Boolean!
+  createdAt: String!
+  userId: User!
+  assignedTo: User
+  messages: [ChatMessage!]
+}
+
+  type TicketCounts {
+    open: Int
+    inProgress: Int
+    resolved: Int
+  }
+
   type Query {
     getAllTickets: [Ticket] # Public
     getUserTickets: [Ticket!] # Private
@@ -104,16 +123,11 @@ const typeDefs = gql`
     getAdminDashboardData: AdminDashboardData
     getAllUsers: [User!]!
     getAdminReports(period: String): AdminReports
+    
+    # Technician Query
+    getTechnicianTickets: [TechnicianTicket!]!
   }
 
-  type TicketCounts {
-    open: Int
-    inProgress: Int
-    resolved: Int
-  }
-
-  scalar Upload
-  
   type Mutation {
     sendOtp(email: String!): Boolean
     verifyOtp(email: String!, otp: String!): User
@@ -126,11 +140,11 @@ const typeDefs = gql`
       role: String!
     ): User
     createTicket(
-    description: String!
-    priority: String
-    category: String
-    requiresTechnician: Boolean 
-  ): Ticket
+      description: String!
+      priority: String
+      category: String
+      requiresTechnician: Boolean 
+    ): Ticket
     updateTicketStatus(id: ID!, status: String!): Ticket
     sendMessage(
       ticketId: ID!

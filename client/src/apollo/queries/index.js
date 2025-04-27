@@ -148,3 +148,35 @@ export const GET_ADMIN_REPORTS = gql`
     }
   }
 `;
+
+export const GET_TECHNICIAN_TICKETS = gql`
+  query GetTechnicianTickets {
+    getTechnicianTickets {
+      id
+      description
+      status
+      priority
+      category
+      requiresTechnician
+      createdAt
+      userId {
+        id
+        fullname
+        email
+      }
+      assignedTo {
+        id
+        fullname
+        email
+      }
+      messages {
+        id
+        sender
+        message
+        messageType
+        voiceUrl
+        createdAt
+      }
+    }
+  }
+`;

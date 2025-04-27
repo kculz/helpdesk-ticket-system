@@ -1,3 +1,4 @@
+const ChatMessage = require("../../models/ChatMessage");
 const Ticket = require("../../models/Ticket");
 const User = require("../../models/User")
 const emailQueue = require("../../workers/emailWorker");
@@ -34,6 +35,56 @@ const ticketResolvers = {
 
       return tickets;
     },
+    // Add to ticketResolvers.Query
+    getTechnicianTickets: async (_, __, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'technician') {
+        throw new Error("Unauthorized: Technician access only");
+      }
+      
+      const tickets = await Ticket.find({ assignedTo: currentUser.id })
+        .populate('userId', 'fullname email')
+        .populate('assignedTo', 'fullname email')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const ticketsWithMessages = await Promise.all(
+        tickets.map(async ticket => {
+          const messages = await ChatMessage.find({ ticketId: ticket._id })
+            .sort({ createdAt: 1 })
+            .lean();
+
+          return {
+            id: ticket._id.toString(),
+            description: ticket.description,
+            status: ticket.status,
+            priority: ticket.priority,
+            category: ticket.category,
+            requiresTechnician: ticket.requiresTechnician,
+            createdAt: ticket.createdAt.toISOString(),
+            userId: {
+              id: ticket.userId._id.toString(),
+              fullname: ticket.userId.fullname,
+              email: ticket.userId.email
+            },
+            assignedTo: ticket.assignedTo ? {
+              id: ticket.assignedTo._id.toString(),
+              fullname: ticket.assignedTo.fullname,
+              email: ticket.assignedTo.email
+            } : null,
+            messages: messages.map(msg => ({
+              id: msg._id.toString(),
+              sender: msg.sender,
+              message: msg.message,
+              messageType: msg.messageType || 'text',
+              voiceUrl: msg.voiceUrl,
+              createdAt: msg.createdAt.toISOString()
+            }))
+          };
+        })
+      );
+
+      return ticketsWithMessages;
+    }
 
   },
   Mutation: {

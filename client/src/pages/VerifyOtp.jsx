@@ -15,7 +15,6 @@ const VerifyOtp = () => {
   const [verifyOtp, { loading, error }] = useMutation(VERIFY_OTP);
 
   const email = location.state?.email;
-
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     try {
@@ -28,7 +27,17 @@ const VerifyOtp = () => {
             role: data.verifyOtp.role,
           })
         );
-        navigate(`/${data?.verifyOtp?.role}`); // Redirect to the user | admin dashboard
+        
+        // Determine the correct dashboard path based on role
+        const dashboardPath = data.verifyOtp.role === 'user' 
+          ? '/user' 
+          : '/admin'; // This will catch both admin and technician roles
+        
+        navigate(dashboardPath, { 
+          state: { 
+            role: data.verifyOtp.role 
+          } 
+        });
       }
     } catch (err) {
       alert("Invalid OTP. Please try again.");
