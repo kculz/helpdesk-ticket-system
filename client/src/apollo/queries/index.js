@@ -180,3 +180,17 @@ export const GET_TECHNICIAN_TICKETS = gql`
     }
   }
 `;
+
+
+export const GET_RECENT_USERS = gql`
+  query GetRecentUsers($limit: Int) {
+    getRecentUsers(limit: $limit) {
+      id
+      workId
+      fullname
+      email
+      role
+      createdAt
+    }
+  }
+`;

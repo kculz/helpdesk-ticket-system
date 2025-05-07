@@ -153,3 +153,27 @@ export const CREATE_KB_ARTICLE = gql`
     }
   }
 `;
+
+export const REGISTER_USER = gql`
+  mutation RegisterUser(
+    $fullname: String!
+    $phone: String!
+    $email: String!
+    $dept: String!
+    $role: String!
+  ) {
+    registerUser(
+      fullname: $fullname
+      phone: $phone
+      email: $email
+      dept: $dept
+      role: $role
+    ) {
+      id
+      workId
+      fullname
+      email
+      role
+    }
+  }
+`;
