@@ -125,8 +125,8 @@ export const UPDATE_USER_ROLE = gql`
 
 // Delete User
 export const DELETE_USER = gql`
-  mutation DeleteUser($userId: ID!) {
-    deleteUser(userId: $userId)
+  mutation DeleteUser($id: ID!) {
+    deleteUser(id: $id)
   }
 `;
 
@@ -171,6 +171,32 @@ export const REGISTER_USER = gql`
     ) {
       id
       workId
+      fullname
+      email
+      role
+    }
+  }
+`;
+
+
+export const UPDATE_USER = gql`
+  mutation UpdateUser(
+    $id: ID!
+    $fullname: String
+    $phone: String
+    $email: String
+    $dept: String
+    $role: String
+  ) {
+    updateUser(
+      id: $id
+      fullname: $fullname
+      phone: $phone
+      email: $email
+      dept: $dept
+      role: $role
+    ) {
+      id
       fullname
       email
       role

@@ -15,6 +15,21 @@ export const GET_USER_PROFILE = gql`
   }
 `;
 
+export const GET_USER_BY_ID = gql`
+  query GetUserById($id: ID!) {
+    getUserById(id: $id) {
+      id
+      workId
+      fullname
+      email
+      phone
+      dept
+      role
+      createdAt
+    }
+  }
+`;
+
 export const GET_USER_TICKETS = gql`
   query GetUserTickets {
     getUserTickets {

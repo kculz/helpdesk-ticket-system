@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { 
   GET_ADMIN_DASHBOARD_DATA, 
+  GET_RECENT_USERS, 
   GET_TECHNICIAN_TICKETS 
 } from "../../apollo/queries";
 import Loader from "./components/Loader";
@@ -27,6 +28,11 @@ const AdminDashboard = () => {
     error: adminError 
   } = useQuery(GET_ADMIN_DASHBOARD_DATA, { 
     skip: role !== 'admin' 
+  });
+
+  const { data: recentUsersData } = useQuery(GET_RECENT_USERS, {
+    variables: { limit: 2 },
+    skip: role !== 'admin'
   });
 
   const { 
@@ -231,20 +237,19 @@ const TicketList = ({ tickets }) => (
 // Admin Activity List Component
 const AdminActivityList = () => (
   <ul className="space-y-4">
-    <li className="flex items-center justify-between">
-      <div>
-        <p className="text-foreground font-medium">New user registered</p>
-        <p className="text-sm text-muted-foreground">John Doe created an account</p>
-      </div>
-      <span className="text-sm text-muted-foreground">10 minutes ago</span>
-    </li>
-    <li className="flex items-center justify-between">
-      <div>
-        <p className="text-foreground font-medium">Knowledge base updated</p>
-        <p className="text-sm text-muted-foreground">Article: "How to reset password"</p>
-      </div>
-      <span className="text-sm text-muted-foreground">3 hours ago</span>
-    </li>
+    {recentUsersData?.getRecentUsers.map(user => (
+      <li key={user.id} className="flex items-center justify-between">
+        <div>
+          <p className="text-foreground font-medium">New user registered</p>
+          <p className="text-sm text-muted-foreground">
+            {user.fullname} ({user.role})
+          </p>
+        </div>
+        <span className="text-sm text-muted-foreground">
+          {new Date(user.createdAt).toLocaleDateString()}
+        </span>
+      </li>
+    ))}
   </ul>
 );
 

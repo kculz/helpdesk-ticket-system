@@ -1,6 +1,6 @@
 import { Route, Routes } from "react-router-dom"
 import { SendOtp, VerifyOtp } from "./pages"
-import { AdminDashboard, AdminProfile, AdminTicketChat, AdminTicketList } from "./users/admin"
+import { AddUser, AdminDashboard, AdminProfile, AdminTicketChat, AdminTicketList, UserDetails, Users } from "./users/admin"
 import { KnowledgeBase, Profile, TicketChat, TicketsList, UserDashboard, ViewTicket } from "./users/user"
 import { AdminDashboardLayout, ProtectedRoutes, UserDashboardLayout } from "./layouts"
 
@@ -27,6 +27,9 @@ function App() {
               <Route path="profile" element={<AdminProfile />} />
               <Route path='tickets-list' element={<AdminTicketList />} />
               <Route path="ticket/:id" element={<AdminTicketChat />} />
+              <Route path="users" element={<Users />} />
+              <Route path="users/:id" element={<UserDetails />} />
+              <Route path="users/add" element={<AddUser />} />
             </Route>
 
           </Route>
