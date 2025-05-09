@@ -121,7 +121,6 @@ const typeDefs = gql`
     
     # Admin Queries
     getAdminDashboardData: AdminDashboardData
-    getAllUsers: [User!]!
     getAdminReports(period: String): AdminReports
     getRecentUsers(limit: Int = 2): [User!]!
     getAllUsers: [User!]!

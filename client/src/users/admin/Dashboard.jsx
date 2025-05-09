@@ -178,7 +178,7 @@ const AdminDashboard = () => {
           ) : role === 'technician' ? (
             <TicketList tickets={technicianTickets.slice(0, 5)} />
           ) : (
-            <AdminActivityList />
+            <AdminActivityList recentUsers={recentUsersData?.getRecentUsers || []} />
           )}
         </div>
       </div>
@@ -235,22 +235,28 @@ const TicketList = ({ tickets }) => (
 );
 
 // Admin Activity List Component
-const AdminActivityList = () => (
-  <ul className="space-y-4">
-    {recentUsersData?.getRecentUsers.map(user => (
-      <li key={user.id} className="flex items-center justify-between">
-        <div>
-          <p className="text-foreground font-medium">New user registered</p>
-          <p className="text-sm text-muted-foreground">
-            {user.fullname} ({user.role})
-          </p>
-        </div>
-        <span className="text-sm text-muted-foreground">
-          {new Date(user.createdAt).toLocaleDateString()}
-        </span>
-      </li>
-    ))}
-  </ul>
-);
+const AdminActivityList = ({ recentUsers }) => {
+  if (recentUsers.length === 0) {
+    return <p className="text-muted-foreground">No recent activity found</p>;
+  }
+
+  return (
+    <ul className="space-y-4">
+      {recentUsers.map(user => (
+        <li key={user.id} className="flex items-center justify-between">
+          <div>
+            <p className="text-foreground font-medium">New user registered</p>
+            <p className="text-sm text-muted-foreground">
+              {user.fullname} ({user.role})
+            </p>
+          </div>
+          <span className="text-sm text-muted-foreground">
+            {new Date(user.createdAt).toLocaleDateString()}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+};
 
 export default AdminDashboard;
