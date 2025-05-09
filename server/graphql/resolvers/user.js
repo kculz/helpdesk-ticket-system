@@ -18,6 +18,30 @@ const userResolvers = {
 
       return user;
     },
+
+    getRecentUsers: async (_, { limit }, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        throw new Error("Unauthorized: Admin access only");
+      }
+      return await User.find()
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+    },
+
+    getAllUsers: async (_, __, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        throw new Error("Unauthorized: Admin access only");
+      }
+      return await User.find().sort({ createdAt: -1 });
+    },
+    
+    getUserById: async (_, { id }, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        throw new Error("Unauthorized: Admin access only");
+      }
+      return await User.findById(id);
+    }
   },
 
   Mutation: {
@@ -42,6 +66,22 @@ const userResolvers = {
       await newUser.save();
       return newUser;
     },
+
+    updateUser: async (_, { id, ...updateData }, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        throw new Error("Unauthorized: Admin access only");
+      }
+      return await User.findByIdAndUpdate(id, updateData, { new: true });
+    },
+
+
+    deleteUser: async (_, { id }, { user: currentUser }) => {
+      if (!currentUser || currentUser.role !== 'admin') {
+        throw new Error("Unauthorized: Admin access only");
+      }
+      await User.findByIdAndDelete(id);
+      return true;
+    }
   },
 };
 

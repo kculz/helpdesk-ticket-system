@@ -123,6 +123,9 @@ const typeDefs = gql`
     getAdminDashboardData: AdminDashboardData
     getAllUsers: [User!]!
     getAdminReports(period: String): AdminReports
+    getRecentUsers(limit: Int = 2): [User!]!
+    getAllUsers: [User!]!
+    getUserById(id: ID!): User
     
     # Technician Query
     getTechnicianTickets: [TechnicianTicket!]!
@@ -158,7 +161,15 @@ const typeDefs = gql`
     
     # Admin Mutations
     updateUserRole(userId: ID!, role: String!): User
-    deleteUser(userId: ID!): Boolean
+    updateUser(
+      id: ID!
+      fullname: String
+      phone: String
+      email: String
+      dept: String
+      role: String
+    ): User!
+    deleteUser(id: ID!): Boolean!
     assignTicket(ticketId: ID!, agentId: ID!): Ticket
     createKBArticle(title: String!, content: String!, category: String!): KBArticle
   }
