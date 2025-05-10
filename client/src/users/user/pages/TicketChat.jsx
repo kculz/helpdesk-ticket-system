@@ -5,53 +5,49 @@ import { GET_CHAT_MESSAGES, GET_TICKET } from "../../../apollo/queries";
 import { SEND_MESSAGE, INITIATE_CALL, CONVERT_TEXT_TO_SPEECH } from "../../../apollo/mutations";
 import { MESSAGE_SENT_SUBSCRIPTION, CALL_INITIATED_SUBSCRIPTION } from "../../../apollo/subscriptions";
 import Loader from "../components/Loader";
+import moment from "moment";
 
 const TicketChat = ({ ticketId }) => {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState("");
   const [ticket, setTicket] = useState(null);
-  const [callStatus, setCallStatus] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState(null);
   const mediaRecorderRef = useRef(null);
   const chatEndRef = useRef(null);
 
   // Fetch initial messages and ticket data
-  const { data: messagesData } = useQuery(GET_CHAT_MESSAGES, {
+  const { data: messagesData, loading: messagesLoading } = useQuery(GET_CHAT_MESSAGES, {
     variables: { ticketId },
     fetchPolicy: "network-only"
   });
 
-  const { data: ticketData } = useQuery(GET_TICKET, {
+  const { data: ticketData, loading: ticketLoading } = useQuery(GET_TICKET, {
     variables: { id: ticketId },
   });
 
   // Mutations
-  const [sendMessage] = useMutation(SEND_MESSAGE);
-  const [initiateCall] = useMutation(INITIATE_CALL);
-  const [convertTextToSpeech] = useMutation(CONVERT_TEXT_TO_SPEECH);
-
+  const [sendMessage] = useMutation(SEND_MESSAGE, {
+    onCompleted: (data) => {
+      // This ensures we have the latest message from server
+      if (data.sendMessage) {
+        setMessages(prev => {
+          const exists = prev.some(msg => msg.id === data.sendMessage.id);
+          return exists ? prev : [...prev, data.sendMessage];
+        });
+      }
+    }
+  });
   // Subscriptions
   useSubscription(MESSAGE_SENT_SUBSCRIPTION, {
     variables: { ticketId },
     onSubscriptionData: ({ subscriptionData }) => {
       const newMessage = subscriptionData.data?.messageSent;
-      if (newMessage) {
+      if (newMessage && newMessage.sender !== "user") { // Only add non-user messages
         setMessages(prev => {
           const exists = prev.some(msg => msg.id === newMessage.id);
           return exists ? prev : [...prev, newMessage];
         });
-      }
-    }
-  });
-
-  useSubscription(CALL_INITIATED_SUBSCRIPTION, {
-    variables: { ticketId },
-    onSubscriptionData: ({ subscriptionData }) => {
-      const callData = subscriptionData.data?.callInitiated;
-      if (callData) {
-        setCallStatus(callData);
-        handleCallConnection(callData);
       }
     }
   });
@@ -75,7 +71,24 @@ const TicketChat = ({ ticketId }) => {
     e.preventDefault();
     if (inputText.trim() === "") return;
 
+    const tempId = `temp-${Date.now()}`;
+    const tempMessage = {
+      id: tempId,
+      sender: "user",
+      message: inputText,
+      messageType: "text",
+      voiceUrl: null,
+      createdAt: new Date().toISOString(),
+      __typename: "ChatMessage",
+      isOptimistic: true // Mark as optimistic
+    };
+
+    // 1. Immediately add to UI
+    setMessages(prev => [...prev, tempMessage]);
+    setInputText("");
+
     try {
+      // 2. Send to server
       await sendMessage({
         variables: {
           ticketId,
@@ -83,45 +96,32 @@ const TicketChat = ({ ticketId }) => {
           message: inputText,
           messageType: "text"
         },
-        optimisticResponse: {
-          sendMessage: {
-            __typename: "ChatMessage",
-            id: `temp-${Date.now()}`,
-            sender: "user",
-            message: inputText,
-            messageType: "text",
-            voiceUrl: null,
-            createdAt: new Date().toISOString()
-          }
-        },
-        update: (cache, { data: { sendMessage } }) => {
-          const existingMessages = cache.readQuery({
-            query: GET_CHAT_MESSAGES,
-            variables: { ticketId }
-          });
-
-          if (existingMessages) {
-            cache.writeQuery({
-              query: GET_CHAT_MESSAGES,
-              variables: { ticketId },
-              data: {
-                getChatMessages: [
-                  ...existingMessages.getChatMessages,
-                  sendMessage
-                ]
-              }
-            });
-          }
-        }
+        // The onCompleted handler will update with the real message
       });
-      setInputText("");
     } catch (error) {
       console.error("Error sending message:", error);
+      // Remove if failed
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
     }
   };
 
   const handleSendVoiceMessage = async () => {
     if (!audioBlob) return;
+
+    const tempId = `temp-${Date.now()}`;
+    const tempMessage = {
+      id: tempId,
+      sender: "user",
+      message: "Voice message...",
+      messageType: "voice",
+      voiceUrl: null,
+      createdAt: new Date().toISOString(),
+      __typename: "ChatMessage"
+    };
+
+    // Optimistic update
+    setMessages(prev => [...prev, tempMessage]);
+    setAudioBlob(null);
 
     try {
       const file = new File([audioBlob], `voice-${Date.now()}.mp3`, {
@@ -136,40 +136,17 @@ const TicketChat = ({ ticketId }) => {
           voiceFile: file
         },
         optimisticResponse: {
-          sendMessage: {
-            __typename: "ChatMessage",
-            id: `temp-${Date.now()}`,
-            sender: "user",
-            message: "Voice message...",
-            messageType: "voice",
-            voiceUrl: null,
-            createdAt: new Date().toISOString()
-          }
+          sendMessage: tempMessage
         },
-        update: (cache, { data: { sendMessage } }) => {
-          const existingMessages = cache.readQuery({
-            query: GET_CHAT_MESSAGES,
-            variables: { ticketId }
-          });
-
-          if (existingMessages) {
-            cache.writeQuery({
-              query: GET_CHAT_MESSAGES,
-              variables: { ticketId },
-              data: {
-                getChatMessages: [
-                  ...existingMessages.getChatMessages,
-                  sendMessage
-                ]
-              }
-            });
-          }
+        update: (cache, { data: { sendMessage: serverMessage } }) => {
+          setMessages(prev => 
+            prev.map(msg => msg.id === tempId ? serverMessage : msg)
+          );
         }
       });
-      
-      setAudioBlob(null);
     } catch (error) {
       console.error("Error sending voice message:", error);
+      setMessages(prev => prev.filter(msg => msg.id !== tempId));
     }
   };
 
@@ -210,7 +187,6 @@ const TicketChat = ({ ticketId }) => {
   const playAudio = async (voiceUrl, messageText) => {
     try {
       if (!voiceUrl && messageText) {
-        // Generate speech from text if no voice URL exists
         const { data } = await convertTextToSpeech({
           variables: { text: messageText }
         });
@@ -231,7 +207,7 @@ const TicketChat = ({ ticketId }) => {
   };
 
   const handleInitiateCall = async (type) => {
-    if (!ticket || ticket.priority !== "HIGH") {
+    if (!ticket || ticket.priority !== "high") {
       alert("Calls can only be initiated for high priority tickets");
       return;
     }
@@ -245,8 +221,7 @@ const TicketChat = ({ ticketId }) => {
       });
       
       if (data?.initiateCall) {
-        setCallStatus(data.initiateCall);
-        handleCallConnection(data.initiateCall);
+        alert(`${type.toUpperCase()} Call initiated. Call ID: ${data.initiateCall.callId}`);
       }
     } catch (error) {
       console.error("Error initiating call:", error);
@@ -254,20 +229,42 @@ const TicketChat = ({ ticketId }) => {
     }
   };
 
-  const handleCallConnection = (callData) => {
-    // Placeholder for WebRTC connection logic
-    console.log("Call initiated:", callData);
-    alert(`${callData.type.toUpperCase()} Call initiated. Call ID: ${callData.callId}`);
+  // Format date using moment
+  const formatDate = (dateString) => {
+    return moment(dateString).isValid() 
+      ? moment(dateString).format("h:mm A") 
+      : "Just now";
   };
 
-  if (!messagesData || !ticketData) {
+    const displayMessages = messages.filter(msg => {
+    if (msg.isOptimistic) {
+      // Only show if we haven't received the real message yet
+      return !messages.some(m => !m.isOptimistic && m.createdAt === msg.createdAt);
+    }
+    return true;
+  });
+
+  // Group consecutive messages from same sender
+  const groupedMessages = displayMessages.reduce((groups, message) => {
+    const lastGroup = groups[groups.length - 1];
+    if (lastGroup && lastGroup[0].sender === message.sender) {
+      lastGroup.push(message);
+    } else {
+      groups.push([message]);
+    }
+    return groups;
+  }, []);
+
+  if (messagesLoading || ticketLoading) {
     return <Loader />;
   }
+
+  // const groupedMessages = groupMessages(messages);
 
   return (
     <div className="flex flex-col bg-background p-6 h-full">
       {/* Priority and Call Buttons */}
-      {ticket?.priority === "HIGH" && (
+      {ticket?.priority === "high" && (
         <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded-r flex items-center justify-between">
           <span className="text-red-700 font-semibold">
             High Priority Ticket
@@ -294,41 +291,48 @@ const TicketChat = ({ ticketId }) => {
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto mb-6">
         <div className="max-w-2xl mx-auto">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${
-                msg.sender === "user" ? "justify-end" : "justify-start"
-              } mb-4`}
-            >
-              <div
-                className={`max-w-[70%] p-4 rounded-xl ${
-                  msg.sender === "user"
-                    ? "bg-primary text-white"
-                    : msg.sender === "ai"
-                    ? "bg-purple-100 text-foreground border border-purple-200"
-                    : "bg-card text-foreground border border-border"
-                }`}
-              >
-                {msg.messageType === 'voice' ? (
-                  <div className="flex items-center gap-2">
-                    <button 
-                      onClick={() => playAudio(msg.voiceUrl, msg.message)}
-                      className="p-2 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30"
-                    >
-                      <FiVolume2 size={16} />
-                    </button>
-                    <span>{msg.message || "Voice message"}</span>
+          {groupedMessages.map((messageGroup, groupIndex) => (
+        <div key={`group-${groupIndex}`} className={`flex ${messageGroup[0].sender === "user" ? "justify-end" : "justify-start"} mb-3`}>
+              <div className="flex flex-col space-y-1 max-w-[70%]">
+                {messageGroup.map((msg, msgIndex) => (
+                  <div
+                    key={msg.id}
+                    className={`p-3 rounded-xl ${
+                      msg.sender === "user"
+                        ? "bg-primary text-white rounded-br-none"
+                        : msg.sender === "ai"
+                        ? "bg-purple-100 text-foreground border border-purple-200 rounded-bl-none"
+                        : "bg-card text-foreground border border-border rounded-bl-none"
+                    } ${
+                      msgIndex === 0 ? 'rounded-tl-xl' : 'rounded-tl-sm'
+                    } ${
+                      msgIndex === messageGroup.length - 1 ? 'rounded-bl-xl' : 'rounded-bl-sm'
+                    }`}
+                  >
+                    {msgIndex === 0 && (
+                      <p className="text-xs font-semibold mb-1">
+                        {msg.sender === "user" ? "You" : 
+                         msg.sender === "ai" ? "AI Assistant" : "Support Agent"}
+                      </p>
+                    )}
+                    {msg.messageType === 'voice' ? (
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => playAudio(msg.voiceUrl, msg.message)}
+                          className="p-2 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30"
+                        >
+                          <FiVolume2 size={16} />
+                        </button>
+                        <span>{msg.message || "Voice message"}</span>
+                      </div>
+                    ) : (
+                      <p className="text-sm">{msg.message}</p>
+                    )}
+                    <p className="text-xs opacity-70 mt-1">
+                      {formatDate(msg.createdAt)}
+                    </p>
                   </div>
-                ) : (
-                  <p className="text-sm">{msg.message}</p>
-                )}
-                <p className="text-xs opacity-70 mt-1">
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
-                </p>
+                ))}
               </div>
             </div>
           ))}

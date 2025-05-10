@@ -14,12 +14,11 @@ const AdminDashboardLayout = () => {
   // Handle logout
   const handleLogout = () => {
     // Clear localStorage
-    localStorage.removeItem("token");
-    localStorage.removeItem("role");
-    localStorage.removeItem("isAuthenticated");
-
+    localStorage.removeItem("auth");
+    navigate("/logout"); // Redirect to logout page
+    
     // Redirect to the login or home page
-    navigate("/"); // Change this to your login route if needed
+    // navigate("/"); // Change this to your login route if needed
   };
 
   return (

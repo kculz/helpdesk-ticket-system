@@ -1,5 +1,5 @@
 import { Route, Routes } from "react-router-dom"
-import { SendOtp, VerifyOtp } from "./pages"
+import { Logout, SendOtp, VerifyOtp } from "./pages"
 import { AddUser, AdminDashboard, AdminProfile, AdminTicketChat, AdminTicketList, UserDetails, Users } from "./users/admin"
 import { KnowledgeBase, Profile, TicketChat, TicketsList, UserDashboard, ViewTicket } from "./users/user"
 import { AdminDashboardLayout, ProtectedRoutes, UserDashboardLayout } from "./layouts"
@@ -10,6 +10,7 @@ function App() {
         <Routes>
           <Route path="/" element={<SendOtp />} />
           <Route path="/verify-otp" element={<VerifyOtp />} />
+          <Route path="/logout" element={<Logout />} />
 
           <Route element={<ProtectedRoutes />} >
 

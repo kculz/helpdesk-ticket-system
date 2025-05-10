@@ -92,16 +92,8 @@ const AdminDashboard = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-            <StatCard 
-              title="Total Users"
-              value={stats.totalUsers}
-              description="Registered users"
-            />
-            <StatCard 
-              title="Total Tickets"
-              value={stats.totalTickets}
-              description="All support tickets"
-            />
+           
+            
             <StatCard 
               title="Open Tickets"
               value={stats.openTickets}
@@ -112,11 +104,7 @@ const AdminDashboard = () => {
               value={stats.resolvedTickets}
               description="Completed tickets"
             />
-            <StatCard 
-              title="Agents Online"
-              value={stats.agentsOnline}
-              description="Available support staff"
-            />
+           
           </div>
         )}
       </div>
@@ -139,11 +127,7 @@ const AdminDashboard = () => {
                 description="View pending tickets"
                 onClick={() => navigate("/admin/tickets-list?status=open")}
               />
-              <ActionCard 
-                title="Knowledge Base"
-                description="View support articles"
-                onClick={() => navigate("/admin/knowledge-base")}
-              />
+              
             </>
           ) : (
             <>
@@ -157,11 +141,7 @@ const AdminDashboard = () => {
                 description="View and assign support tickets"
                 onClick={() => navigate("/admin/tickets-list")}
               />
-              <ActionCard 
-                title="Knowledge Base"
-                description="Manage support articles"
-                onClick={() => navigate("/admin/knowledge-base")}
-              />
+             
             </>
           )}
         </div>
