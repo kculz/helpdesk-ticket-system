@@ -15,7 +15,7 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// WebSocket Server Setup (unchanged)
+// WebSocket Server Setup
 const server = createServer();
 const wss = new WebSocket.Server({ server });
 const clients = new Map();
@@ -34,8 +34,8 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    clients.get(ticketId).delete(ws);
-    if (clients.get(ticketId).size === 0) {
+    clients.get(ticketId)?.delete(ws);
+    if (clients.get(ticketId)?.size === 0) {
       clients.delete(ticketId);
     }
   });
@@ -48,7 +48,10 @@ server.listen(WS_PORT, () => {
 
 const broadcastToTicket = (ticketId, message) => {
   if (clients.has(ticketId)) {
-    const messageString = JSON.stringify(message);
+    const messageString = JSON.stringify({
+      ...message,
+      timestamp: Date.now()
+    });
     for (const client of clients.get(ticketId)) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(messageString);
@@ -71,12 +74,16 @@ const initiateCall = async (ticketId, userId, type = 'audio') => {
     ...callDetails
   });
 
-  pubsub.publish(`CALL_INITIATED_${ticketId}`, { callInitiated: callDetails });
+  pubsub.publish(`CALL_INITIATED_${ticketId}`, { 
+    callInitiated: {
+      ...callDetails,
+      __typename: "CallDetails"
+    } 
+  });
 
   return callDetails;
 };
 
-// New function to convert text to speech
 const textToSpeech = async (text) => {
   try {
     const response = await openai.audio.speech.create({
@@ -85,12 +92,8 @@ const textToSpeech = async (text) => {
       input: text,
     });
 
-    // Convert the response to a buffer
     const buffer = Buffer.from(await response.arrayBuffer());
-    
-    // Upload to storage and get URL
     const voiceUrl = await uploadFileToStorage(buffer, 'audio/mpeg', `${Date.now()}.mp3`);
-    
     return voiceUrl;
   } catch (error) {
     console.error("Error in text-to-speech conversion:", error);
@@ -107,9 +110,10 @@ const chatResolvers = {
           id: msg._id.toString(),
           sender: msg.sender,
           message: msg.message,
-          messageType: msg.messageType || 'text', // Default to text if not set
+          messageType: msg.messageType || 'text',
           voiceUrl: msg.voiceUrl,
           createdAt: msg.createdAt,
+          __typename: "ChatMessage"
         }));
       } catch (error) {
         console.error("Error fetching messages:", error);
@@ -122,25 +126,17 @@ const chatResolvers = {
       try {
         let voiceUrl = null;
         
-        // Handle voice message upload
         if (messageType === "voice" && voiceFile) {
-          console.log("Voice file received:", voiceFile);
           const file = await voiceFile.promise || (await voiceFile);
           const { createReadStream, filename, mimetype } = file;
-        
-          // Path to save the uploaded file
           const uploadDir = path.join(__dirname, '../../uploads');
-        
-          // Check if the 'uploads' directory exists, if not, create it
+          
           if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
-            console.log(`Created directory: ${uploadDir}`);
           }
-        
+          
           const uploadPath = path.join(uploadDir, filename);
           const stream = createReadStream();
-          
-          // Write the file to the uploads directory
           const out = fs.createWriteStream(uploadPath);
         
           await new Promise((resolve, reject) => {
@@ -149,15 +145,10 @@ const chatResolvers = {
             out.on("error", reject);
           });
         
-          // Set the file URL for further use
           voiceUrl = `/uploads/${filename}`;
-          // For voice messages, we do not need a message (it will be empty)
-          message = ''; // Clear message field for voice type
+          message = '';
         }
         
-        
-
-        // Save the message
         const chatMessage = new ChatMessage({
           ticketId,
           sender,
@@ -176,22 +167,20 @@ const chatResolvers = {
           messageType: savedMessage.messageType,
           voiceUrl: savedMessage.voiceUrl,
           createdAt: savedMessage.createdAt,
+          __typename: "ChatMessage"
         };
 
-        // Broadcast the message
         broadcastToTicket(ticketId, {
           type: 'new_message',
           message: messageObject
         });
 
-        pubsub.publish(`MESSAGE_SENT_${ticketId}`, { messageSent: messageObject });
+        pubsub.publish(`MESSAGE_SENT_${ticketId}`, { 
+          messageSent: messageObject 
+        });
 
-        // Fetch ticket to check priority
         const ticket = await Ticket.findById(ticketId);
-        if (!ticket) {
-          console.warn("Ticket not found, returning only user message.");
-          return messageObject;
-        }
+        if (!ticket) return messageObject;
 
         let aiMessageObject = null;
 
@@ -208,7 +197,6 @@ const chatResolvers = {
             const aiMessageText = openaiResponse.choices[0].message.content;
             let aiVoiceUrl = null;
 
-            // If user sent voice message, also generate voice response
             if (messageType === 'voice') {
               try {
                 aiVoiceUrl = await textToSpeech(aiMessageText);
@@ -235,6 +223,7 @@ const chatResolvers = {
               messageType: savedAIMessage.messageType,
               voiceUrl: savedAIMessage.voiceUrl,
               createdAt: savedAIMessage.createdAt,
+              __typename: "ChatMessage"
             };
 
             broadcastToTicket(ticketId, {
@@ -242,7 +231,9 @@ const chatResolvers = {
               message: aiMessageObject
             });
 
-            pubsub.publish(`MESSAGE_SENT_${ticketId}`, { messageSent: aiMessageObject });
+            pubsub.publish(`MESSAGE_SENT_${ticketId}`, { 
+              messageSent: aiMessageObject 
+            });
           } catch (aiError) {
             console.error("Error generating AI response:", aiError);
           }
@@ -254,14 +245,13 @@ const chatResolvers = {
           }
         }
 
-        return aiMessageObject ? aiMessageObject : messageObject;
+        return aiMessageObject || messageObject;
       } catch (error) {
         console.error("Error processing sendMessage mutation:", error);
         throw new Error("Failed to send message");
       }
     },
     
-    // New mutation to convert text to speech
     convertTextToSpeech: async (_, { text }) => {
       try {
         const voiceUrl = await textToSpeech(text);
