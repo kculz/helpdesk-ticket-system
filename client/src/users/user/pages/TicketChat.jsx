@@ -5,7 +5,6 @@ import { GET_CHAT_MESSAGES, GET_TICKET } from "../../../apollo/queries";
 import { SEND_MESSAGE, INITIATE_CALL, CONVERT_TEXT_TO_SPEECH } from "../../../apollo/mutations";
 import { MESSAGE_SENT_SUBSCRIPTION, CALL_INITIATED_SUBSCRIPTION } from "../../../apollo/subscriptions";
 import Loader from "../components/Loader";
-import moment from "moment";
 
 const TicketChat = ({ ticketId }) => {
   const [messages, setMessages] = useState([]);
@@ -15,6 +14,9 @@ const TicketChat = ({ ticketId }) => {
   const [audioBlob, setAudioBlob] = useState(null);
   const mediaRecorderRef = useRef(null);
   const chatEndRef = useRef(null);
+
+  const [initiateCall] = useMutation(INITIATE_CALL)
+  const [convertTextToSpeech] = useMutation(CONVERT_TEXT_TO_SPEECH);
 
   // Fetch initial messages and ticket data
   const { data: messagesData, loading: messagesLoading } = useQuery(GET_CHAT_MESSAGES, {
@@ -229,12 +231,56 @@ const TicketChat = ({ ticketId }) => {
     }
   };
 
-  // Format date using moment
-  const formatDate = (dateString) => {
-    return moment(dateString).isValid() 
-      ? moment(dateString).format("h:mm A") 
-      : "Just now";
-  };
+    // Format date using moment
+    const formatDate = (dateInput) => {
+      // Handle null/undefined
+      if (!dateInput) return "Just now";
+
+      let date;
+
+      // Case 1: It's a number (Unix timestamp in milliseconds)
+      if (typeof dateInput === 'number') {
+        date = new Date(dateInput);
+      }
+      // Case 2: It's a string that could be a number (e.g., '1747001394128')
+      else if (typeof dateInput === 'string' && /^\d+$/.test(dateInput)) {
+        date = new Date(parseInt(dateInput, 10));
+      }
+      // Case 3: It's an ISO string or other date string
+      else if (typeof dateInput === 'string') {
+        date = new Date(dateInput);
+      }
+      // Case 4: It's already a Date object
+      else if (dateInput instanceof Date) {
+        date = dateInput;
+      }
+      // Case 5: It's a MongoDB object with $date field
+      else if (dateInput.$date) {
+        date = new Date(dateInput.$date);
+      }
+      // All other cases
+      else {
+        return "Just now";
+      }
+
+      // Final validation
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date input:", dateInput);
+        return "Just now";
+      }
+
+      const now = new Date();
+      const diffSeconds = Math.floor((now - date) / 1000);
+
+      if (diffSeconds < 60) return "Just now";
+      
+      // Format as "3:45 PM"
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    };
+
 
     const displayMessages = messages.filter(msg => {
     if (msg.isOptimistic) {

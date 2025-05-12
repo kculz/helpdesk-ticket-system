@@ -19,6 +19,56 @@ const TicketsList = () => {
 
   if (error) return <p>Error: {error.message}</p>;
 
+      // Format date using moment
+    const formatDate = (dateInput) => {
+      // Handle null/undefined
+      if (!dateInput) return "Just now";
+
+      let date;
+
+      // Case 1: It's a number (Unix timestamp in milliseconds)
+      if (typeof dateInput === 'number') {
+        date = new Date(dateInput);
+      }
+      // Case 2: It's a string that could be a number (e.g., '1747001394128')
+      else if (typeof dateInput === 'string' && /^\d+$/.test(dateInput)) {
+        date = new Date(parseInt(dateInput, 10));
+      }
+      // Case 3: It's an ISO string or other date string
+      else if (typeof dateInput === 'string') {
+        date = new Date(dateInput);
+      }
+      // Case 4: It's already a Date object
+      else if (dateInput instanceof Date) {
+        date = dateInput;
+      }
+      // Case 5: It's a MongoDB object with $date field
+      else if (dateInput.$date) {
+        date = new Date(dateInput.$date);
+      }
+      // All other cases
+      else {
+        return "Just now";
+      }
+
+      // Final validation
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date input:", dateInput);
+        return "Just now";
+      }
+
+      const now = new Date();
+      const diffSeconds = Math.floor((now - date) / 1000);
+
+      if (diffSeconds < 60) return "Just now";
+      
+      // Format as "3:45 PM"
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    };
+
   return (
     <div className="p-6 bg-background">
       <h1 className="text-2xl font-semibold text-foreground mb-6">
@@ -105,7 +155,7 @@ const TicketsList = () => {
                     </span>
                   </td>
                   <td className="p-3 truncate text-sm text-foreground">
-                    {new Date(ticket.createdAt).toLocaleDateString()}
+                    {formatDate(ticket.createdAt)}
                   </td>
                 </tr>
               ))}
