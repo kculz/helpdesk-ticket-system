@@ -166,6 +166,56 @@ const AdminTicketChat = () => {
 
   const ticket = ticketData?.getTicket;
 
+      // Format date using moment
+    const formatDate = (dateInput) => {
+      // Handle null/undefined
+      if (!dateInput) return "Just now";
+
+      let date;
+
+      // Case 1: It's a number (Unix timestamp in milliseconds)
+      if (typeof dateInput === 'number') {
+        date = new Date(dateInput);
+      }
+      // Case 2: It's a string that could be a number (e.g., '1747001394128')
+      else if (typeof dateInput === 'string' && /^\d+$/.test(dateInput)) {
+        date = new Date(parseInt(dateInput, 10));
+      }
+      // Case 3: It's an ISO string or other date string
+      else if (typeof dateInput === 'string') {
+        date = new Date(dateInput);
+      }
+      // Case 4: It's already a Date object
+      else if (dateInput instanceof Date) {
+        date = dateInput;
+      }
+      // Case 5: It's a MongoDB object with $date field
+      else if (dateInput.$date) {
+        date = new Date(dateInput.$date);
+      }
+      // All other cases
+      else {
+        return "Just now";
+      }
+
+      // Final validation
+      if (isNaN(date.getTime())) {
+        console.error("Invalid date input:", dateInput);
+        return "Just now";
+      }
+
+      const now = new Date();
+      const diffSeconds = Math.floor((now - date) / 1000);
+
+      if (diffSeconds < 60) return "Just now";
+      
+      // Format as "3:45 PM"
+      return date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit'
+      });
+    };
+
   return (
     <div className="flex flex-col bg-gray-50 h-screen p-6">
       {/* Priority and Call Buttons */}
@@ -236,10 +286,7 @@ const AdminTicketChat = () => {
               >
                 <p className="text-sm">{msg.message}</p>
                 <p className="text-xs opacity-70 mt-1">
-                  {new Date(msg.createdAt).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                  })}
+                  {formatDate(msg.createdAt)}
                 </p>
               </div>
             </div>

@@ -56,11 +56,11 @@ const Dashboard = () => {
           </div>
 
           {/* Resolved Tickets Card */}
-          <div className="bg-card p-6 rounded-xl shadow-soft border border-border">
+          {/* <div className="bg-card p-6 rounded-xl shadow-soft border border-border">
             <h3 className="text-lg font-semibold text-foreground">Resolved Tickets</h3>
             <p className="text-foreground text-3xl font-bold">{resolved || 0}</p>
             <p className="text-sm text-gray-500">Tickets resolved</p>
-          </div>
+          </div> */}
         </div>
       )}
 

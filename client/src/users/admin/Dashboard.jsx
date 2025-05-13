@@ -1,40 +1,31 @@
-
 import React, { useState, useEffect } from "react";
 import { useQuery } from "@apollo/client";
 import { useNavigate } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { 
-  GET_ADMIN_DASHBOARD_DATA, 
-  GET_RECENT_USERS, 
-  GET_TECHNICIAN_TICKETS 
+  GET_TICKET_COUNTS,
+  GET_TECHNICIAN_TICKETS,
+  GET_RECENT_USERS
 } from "../../apollo/queries";
 import Loader from "./components/Loader";
 
 const AdminDashboard = () => {
   const navigate = useNavigate();
   const { role } = useSelector((state) => state.auth);
-  const [stats, setStats] = useState({
-    totalUsers: 0,
-    totalTickets: 0,
-    openTickets: 0,
-    resolvedTickets: 0,
-    agentsOnline: 0
+  const [ticketCounts, setTicketCounts] = useState({
+    open: 0,
+    inProgress: 0,
+    resolved: 0
   });
 
-  // Fetch data based on user role
+  // Fetch ticket counts (used by both admin and technician)
   const { 
-    data: adminData, 
-    loading: adminLoading, 
-    error: adminError 
-  } = useQuery(GET_ADMIN_DASHBOARD_DATA, { 
-    skip: role !== 'admin' 
-  });
+    data: countsData, 
+    loading: countsLoading, 
+    error: countsError 
+  } = useQuery(GET_TICKET_COUNTS);
 
-  const { data: recentUsersData } = useQuery(GET_RECENT_USERS, {
-    variables: { limit: 2 },
-    skip: role !== 'admin'
-  });
-
+  // Fetch technician-specific data
   const { 
     data: techData, 
     loading: techLoading, 
@@ -43,18 +34,31 @@ const AdminDashboard = () => {
     skip: role !== 'technician' 
   });
 
-  useEffect(() => {
-    if (role === 'admin' && adminData?.getAdminDashboardData) {
-      setStats(adminData.getAdminDashboardData);
-    }
-  }, [adminData, role]);
+  // Fetch admin-specific data
+  const { data: recentUsersData } = useQuery(GET_RECENT_USERS, {
+    variables: { limit: 5 },
+    skip: role !== 'admin'
+  });
 
-  if (adminError || techError) {
-    return <p>Error: {adminError?.message || techError?.message}</p>;
+  useEffect(() => {
+    if (countsData?.getTicketCounts) {
+      setTicketCounts(countsData.getTicketCounts);
+    }
+  }, [countsData]);
+
+  if (countsError || techError) {
+    return <p>Error: {countsError?.message || techError?.message}</p>;
   }
 
-  const loading = (role === 'admin' ? adminLoading : techLoading);
+  const loading = countsLoading || (role === 'technician' ? techLoading : false);
   const technicianTickets = techData?.getTechnicianTickets || [];
+
+  // Calculate technician-specific counts from their assigned tickets
+  const techTicketCounts = {
+    open: technicianTickets.filter(t => t.status === 'open').length,
+    inProgress: technicianTickets.filter(t => t.status === 'inProgress').length,
+    resolved: technicianTickets.filter(t => t.status === 'resolved').length
+  };
 
   // Redirect unauthorized users
   if (role !== 'admin' && role !== 'technician') {
@@ -68,43 +72,30 @@ const AdminDashboard = () => {
         {role === 'technician' ? 'Technician Dashboard' : 'Admin Dashboard'}
       </h1>
 
-      {/* Stats Section */}
+      {/* Stats Section - Ticket Status Counts */}
       <div className="mb-8">
         {loading ? (
           <Loader type="skeleton" count={3} />
-        ) : role === 'technician' ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <StatCard 
-              title="Assigned Tickets"
-              value={technicianTickets.length}
-              description="Your assigned tickets"
-            />
-            <StatCard 
-              title="Open Tickets"
-              value={technicianTickets.filter(t => t.status === 'open').length}
-              description="Tickets to resolve"
-            />
-            <StatCard 
-              title="Resolved Tickets"
-              value={technicianTickets.filter(t => t.status === 'resolved').length}
-              description="Completed tickets"
-            />
-          </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
-           
-            
-            <StatCard 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* <StatCard 
               title="Open Tickets"
-              value={stats.openTickets}
+              value={role === 'technician' ? techTicketCounts.open : ticketCounts.open}
               description="Tickets awaiting resolution"
+              status="open"
             />
             <StatCard 
-              title="Resolved Tickets"
-              value={stats.resolvedTickets}
-              description="Completed tickets"
+              title="In Progress"
+              value={role === 'technician' ? techTicketCounts.inProgress : ticketCounts.inProgress}
+              description="Tickets being worked on"
+              status="inProgress"
             />
-           
+            <StatCard 
+              title="Resolved"
+              value={role === 'technician' ? techTicketCounts.resolved : ticketCounts.resolved}
+              description="Completed tickets"
+              status="resolved"
+            /> */}
           </div>
         )}
       </div>
@@ -123,11 +114,10 @@ const AdminDashboard = () => {
                 onClick={() => navigate("/admin/tickets-list")}
               />
               <ActionCard 
-                title="Open Tickets"
-                description="View pending tickets"
-                onClick={() => navigate("/admin/tickets-list?status=open")}
+                title="Report Issue"
+                description="Submit a technical issue"
+                onClick={() => navigate("/admin/new-ticket")}
               />
-              
             </>
           ) : (
             <>
@@ -141,7 +131,6 @@ const AdminDashboard = () => {
                 description="View and assign support tickets"
                 onClick={() => navigate("/admin/tickets-list")}
               />
-             
             </>
           )}
         </div>
@@ -166,14 +155,22 @@ const AdminDashboard = () => {
   );
 };
 
-// Reusable Stat Card Component
-const StatCard = ({ title, value, description }) => (
-  <div className="bg-card p-6 rounded-xl shadow-soft border border-border">
-    <h3 className="text-lg font-semibold text-foreground">{title}</h3>
-    <p className="text-foreground text-3xl font-bold">{value}</p>
-    <p className="text-sm text-muted-foreground">{description}</p>
-  </div>
-);
+// Enhanced Stat Card Component with status styling
+const StatCard = ({ title, value, description, status }) => {
+  const statusColors = {
+    open: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+    inProgress: 'bg-blue-100 text-blue-800 border-blue-200',
+    resolved: 'bg-green-100 text-green-800 border-green-200'
+  };
+
+  return (
+    <div className={`p-6 rounded-xl shadow-soft border ${statusColors[status]}`}>
+      <h3 className="text-lg font-semibold">{title}</h3>
+      <p className="text-3xl font-bold">{value}</p>
+      <p className="text-sm opacity-80">{description}</p>
+    </div>
+  );
+};
 
 // Reusable Action Card Component
 const ActionCard = ({ title, description, onClick }) => (

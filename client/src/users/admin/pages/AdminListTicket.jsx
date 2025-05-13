@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useQuery } from '@apollo/client';
 import { useNavigate } from 'react-router-dom';
-import { GET_ALL_TICKETS } from '../../../apollo/queries';
+import { GET_ALL_TICKETS, GET_TECHNICIAN_TICKETS } from '../../../apollo/queries';
 import Loader from '../components/Loader';
+import { useSelector } from 'react-redux';
 
 const AdminTicketList = () => {
   const navigate = useNavigate();
@@ -12,14 +13,35 @@ const AdminTicketList = () => {
   });
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortDirection, setSortDirection] = useState('desc');
+  const { role } = useSelector((state) => state.auth);
 
-  // Fetch all tickets
-  const { data, loading, error } = useQuery(GET_ALL_TICKETS);
+  // Fetch tickets based on user role
+  const { 
+    data: adminData, 
+    loading: adminLoading, 
+    error: adminError 
+  } = useQuery(GET_ALL_TICKETS, {
+    skip: role !== 'admin' // Skip if not admin
+  });
+
+  const { 
+    data: techData, 
+    loading: techLoading, 
+    error: techError 
+  } = useQuery(GET_TECHNICIAN_TICKETS, {
+    skip: role === 'admin' // Skip if admin
+  });
+
+  const loading = role === 'admin' ? adminLoading : techLoading;
+  const error = role === 'admin' ? adminError : techError;
 
   if (loading) return <Loader type="spinner" />;
   if (error) return <p>Error: {error.message}</p>;
 
-  const tickets = data?.getAllTickets || [];
+  // Get tickets based on role
+  const tickets = role === 'admin' 
+    ? adminData?.getAllTickets || []
+    : techData?.getTechnicianTickets || [];
 
   // Filter and sort tickets
   const filteredTickets = tickets.filter(ticket => {
@@ -60,7 +82,9 @@ const AdminTicketList = () => {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-foreground mb-4">Ticket Management</h1>
+      <h1 className="text-2xl font-semibold text-foreground mb-4">
+        {role === 'admin' ? 'Ticket Management' : 'My Tickets'}
+      </h1>
       
       {/* Filters */}
       <div className="bg-card p-4 rounded-xl shadow-soft border border-border mb-6">
@@ -133,7 +157,9 @@ const AdminTicketList = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                {role === 'admin' && (
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+                )}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -164,16 +190,17 @@ const AdminTicketList = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {new Date(ticket.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {ticket.user?.fullname || 'Unknown'}
-                    </td>
+                    {role === 'admin' && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm">
+                        {ticket.user?.fullname || 'Unknown'}
+                      </td>
+                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex space-x-2">
                         <button
                           className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            // Add any specific action for this button
                             console.log(`Action for ticket ${ticket.id}`);
                           }}
                         >
@@ -185,7 +212,7 @@ const AdminTicketList = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="px-6 py-4 text-center text-sm text-gray-500">
+                  <td colSpan={role === 'admin' ? 7 : 6} className="px-6 py-4 text-center text-sm text-gray-500">
                     No tickets found
                   </td>
                 </tr>
