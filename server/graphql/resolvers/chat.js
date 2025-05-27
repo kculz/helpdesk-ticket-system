@@ -101,6 +101,19 @@ const textToSpeech = async (text) => {
   }
 };
 
+// Helper function to check if AI should respond
+const shouldAIRespond = (ticket) => {
+  // Don't respond with AI if:
+  // 1. Ticket is technical AND has an assigned technician
+  if (ticket.category === 'technical' && ticket.assignedTo) {
+    console.log(`AI response disabled: Technical ticket ${ticket._id} is assigned to technician ${ticket.assignedTo}`);
+    return false;
+  }
+  
+  // For all other cases, use existing priority-based logic
+  return ticket.priority === "low" || ticket.priority === "medium";
+};
+
 const chatResolvers = {
   Query: {
     getChatMessages: async (_, { ticketId }) => {
@@ -179,12 +192,14 @@ const chatResolvers = {
           messageSent: messageObject 
         });
 
-        const ticket = await Ticket.findById(ticketId);
+        // Fetch ticket with populated assignedTo field if it references another collection
+        const ticket = await Ticket.findById(ticketId).populate('assignedTo');
         if (!ticket) return messageObject;
 
         let aiMessageObject = null;
 
-        if (ticket.priority === "low" || ticket.priority === "medium") {
+        // Check if AI should respond based on ticket category and assignment
+        if (shouldAIRespond(ticket)) {
           const prompt = `The user has submitted a troubleshooting ticket with the following description: "${ticket.description}". They have now sent the following message: "${message}". Provide a helpful response to their message.`;
 
           try {
@@ -238,10 +253,13 @@ const chatResolvers = {
             console.error("Error generating AI response:", aiError);
           }
         } else if (ticket.priority === "high") {
-          try {
-            await initiateCall(ticketId, ticket.userId);
-          } catch (callError) {
-            console.error("Error initiating call:", callError);
+          // Only initiate call for high priority tickets that aren't technical with assigned technicians
+          if (!(ticket.category === 'technical' && ticket.assignedTo)) {
+            try {
+              await initiateCall(ticketId, ticket.userId);
+            } catch (callError) {
+              console.error("Error initiating call:", callError);
+            }
           }
         }
 
