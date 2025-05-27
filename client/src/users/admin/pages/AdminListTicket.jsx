@@ -35,13 +35,63 @@ const AdminTicketList = () => {
   const loading = role === 'admin' ? adminLoading : techLoading;
   const error = role === 'admin' ? adminError : techError;
 
+  // Helper function to safely format dates
+  const formatDate = (dateValue) => {
+    if (!dateValue) return 'N/A';
+    
+    try {
+      // Handle different date formats
+      let date;
+      if (typeof dateValue === 'string') {
+        // Try parsing as timestamp first, then as date string
+        const timestamp = parseInt(dateValue);
+        if (!isNaN(timestamp) && timestamp.toString() === dateValue) {
+          date = new Date(timestamp);
+        } else {
+          date = new Date(dateValue);
+        }
+      } else if (typeof dateValue === 'number') {
+        date = new Date(dateValue);
+      } else {
+        date = new Date(dateValue);
+      }
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return 'Invalid Date';
+      }
+
+      // Format the date
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      console.error('Error formatting date:', error, 'Date value:', dateValue);
+      return 'Invalid Date';
+    }
+  };
+
+
   if (loading) return <Loader type="spinner" />;
-  if (error) return <p>Error: {error.message}</p>;
+  if (error) {
+    console.error('GraphQL Error:', error);
+    return <p>Error: {error.message}</p>;
+  }
 
   // Get tickets based on role
   const tickets = role === 'admin' 
     ? adminData?.getAllTickets || []
     : techData?.getTechnicianTickets || [];
+
+  // Debug logging
+  console.log('Tickets data:', tickets);
+  if (tickets.length > 0) {
+    console.log('Sample ticket structure:', tickets[0]);
+  }
 
   // Filter and sort tickets
   const filteredTickets = tickets.filter(ticket => {
@@ -50,9 +100,15 @@ const AdminTicketList = () => {
     return true;
   }).sort((a, b) => {
     if (sortBy === 'createdAt') {
-      return sortDirection === 'desc' 
-        ? new Date(b.createdAt) - new Date(a.createdAt)
-        : new Date(a.createdAt) - new Date(b.createdAt);
+      const dateA = new Date(a.createdAt);
+      const dateB = new Date(b.createdAt);
+      
+      // Handle invalid dates
+      if (isNaN(dateA.getTime()) && isNaN(dateB.getTime())) return 0;
+      if (isNaN(dateA.getTime())) return 1;
+      if (isNaN(dateB.getTime())) return -1;
+      
+      return sortDirection === 'desc' ? dateB - dateA : dateA - dateB;
     }
     return 0;
   });
@@ -67,6 +123,7 @@ const AdminTicketList = () => {
       case 'open': return 'bg-yellow-500';
       case 'in-progress': return 'bg-primary';
       case 'resolved': return 'bg-green-500';
+      case 'closed': return 'bg-gray-500';
       default: return 'bg-gray-500';
     }
   };
@@ -101,6 +158,7 @@ const AdminTicketList = () => {
               <option value="open">Open</option>
               <option value="in-progress">In Progress</option>
               <option value="resolved">Resolved</option>
+              <option value="closed">Closed</option>
             </select>
           </div>
           
@@ -146,6 +204,13 @@ const AdminTicketList = () => {
         </div>
       </div>
       
+      {/* Tickets Count */}
+      <div className="mb-4">
+        <p className="text-sm text-gray-600">
+          Showing {filteredTickets.length} of {tickets.length} tickets
+        </p>
+      </div>
+      
       {/* Tickets Table */}
       <div className="bg-card rounded-xl shadow-soft border border-border overflow-hidden">
         <div className="overflow-x-auto">
@@ -157,9 +222,7 @@ const AdminTicketList = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
-                {role === 'admin' && (
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-                )}
+                
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -168,43 +231,40 @@ const AdminTicketList = () => {
                 filteredTickets.map((ticket) => (
                   <tr 
                     key={ticket.id} 
-                    className="hover:bg-background cursor-pointer"
+                    className="hover:bg-background cursor-pointer transition-colors duration-150"
                     onClick={() => handleTicketView(ticket.id)}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">#{ticket.id.slice(-6)}</td>
-                    <td className="px-6 py-4 text-sm">
-                      {ticket.description.length > 50 
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      #{ticket.id ? ticket.id.slice(-6) : 'N/A'}
+                    </td>
+                    <td className="px-6 py-4 text-sm" title={ticket.description}>
+                      {ticket.description && ticket.description.length > 50 
                         ? ticket.description.substring(0, 50) + '...' 
-                        : ticket.description}
+                        : ticket.description || 'No description'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 text-xs rounded-full text-white ${getStatusBadgeClass(ticket.status)}`}>
-                        {ticket.status}
+                      <span className={`px-2 py-1 text-xs rounded-full text-white capitalize ${getStatusBadgeClass(ticket.status)}`}>
+                        {ticket.status || 'unknown'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      <span className={`px-2 py-1 text-xs rounded-full text-white ${getPriorityBadgeClass(ticket.priority)}`}>
-                        {ticket.priority}
+                      <span className={`px-2 py-1 text-xs rounded-full text-white capitalize ${getPriorityBadgeClass(ticket.priority)}`}>
+                        {ticket.priority || 'unknown'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {new Date(ticket.createdAt).toLocaleDateString()}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                      {formatDate(ticket.createdAt)}
                     </td>
-                    {role === 'admin' && (
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        {ticket.user?.fullname || 'Unknown'}
-                      </td>
-                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex space-x-2">
                         <button
-                          className="bg-blue-500 text-white px-2 py-1 rounded text-xs"
+                          className="bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs transition-colors duration-150"
                           onClick={(e) => {
                             e.stopPropagation();
-                            console.log(`Action for ticket ${ticket.id}`);
+                            handleTicketView(ticket.id);
                           }}
                         >
-                          Details
+                          View Details
                         </button>
                       </div>
                     </td>
@@ -212,8 +272,16 @@ const AdminTicketList = () => {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={role === 'admin' ? 7 : 6} className="px-6 py-4 text-center text-sm text-gray-500">
-                    No tickets found
+                  <td colSpan={role === 'admin' ? 7 : 6} className="px-6 py-12 text-center text-sm text-gray-500">
+                    <div className="flex flex-col items-center space-y-2">
+                      <svg className="w-12 h-12 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p>No tickets found</p>
+                      {(filters.status !== 'all' || filters.priority !== 'all') && (
+                        <p className="text-xs">Try adjusting your filters</p>
+                      )}
+                    </div>
                   </td>
                 </tr>
               )}
@@ -221,6 +289,7 @@ const AdminTicketList = () => {
           </table>
         </div>
       </div>
+      
     </div>
   );
 };

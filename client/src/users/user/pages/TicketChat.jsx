@@ -40,6 +40,7 @@ const TicketChat = ({ ticketId }) => {
       }
     }
   });
+
   // Subscriptions
   useSubscription(MESSAGE_SENT_SUBSCRIPTION, {
     variables: { ticketId },
@@ -69,18 +70,180 @@ const TicketChat = ({ ticketId }) => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // Enhanced date formatting function for chat messages
+  const formatDate = (dateInput) => {
+    if (!dateInput) return "Just now";
+
+    let date;
+
+    try {
+      // Handle different date input types
+      if (typeof dateInput === 'number') {
+        // Unix timestamp in milliseconds
+        date = new Date(dateInput);
+      } else if (typeof dateInput === 'string') {
+        // Check if it's a numeric string (timestamp)
+        if (/^\d+$/.test(dateInput)) {
+          const timestamp = parseInt(dateInput, 10);
+          // If it's a 10-digit number, it's likely seconds, so convert to milliseconds
+          date = new Date(timestamp.toString().length === 10 ? timestamp * 1000 : timestamp);
+        } else {
+          // It's an ISO string or other date format
+          date = new Date(dateInput);
+        }
+      } else if (dateInput instanceof Date) {
+        // Already a Date object
+        date = dateInput;
+      } else if (dateInput && typeof dateInput === 'object') {
+        // Handle MongoDB date objects or other object formats
+        if (dateInput.$date) {
+          date = new Date(dateInput.$date);
+        } else if (dateInput.seconds) {
+          // Firestore timestamp format
+          date = new Date(dateInput.seconds * 1000);
+        } else {
+          // Try to convert object to string and parse
+          date = new Date(dateInput.toString());
+        }
+      } else {
+        // Fallback: try to create date from input
+        date = new Date(dateInput);
+      }
+
+      // Validate the parsed date
+      if (!date || isNaN(date.getTime())) {
+        console.warn("Invalid date input:", dateInput);
+        return "Just now";
+      }
+
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffSeconds = Math.floor(diffMs / 1000);
+      const diffMinutes = Math.floor(diffSeconds / 60);
+      const diffHours = Math.floor(diffMinutes / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      // Return appropriate format based on time difference
+      if (diffSeconds < 30) {
+        return "Just now";
+      } else if (diffSeconds < 60) {
+        return `${diffSeconds}s ago`;
+      } else if (diffMinutes < 60) {
+        return `${diffMinutes}m ago`;
+      } else if (diffHours < 24) {
+        // Show time for messages within the last 24 hours
+        return date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      } else if (diffDays === 1) {
+        // Yesterday with time
+        return `Yesterday ${date.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        })}`;
+      } else if (diffDays < 7) {
+        // Show day and time for messages within the last week
+        return date.toLocaleDateString('en-US', {
+          weekday: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      } else {
+        // Show full date for older messages
+        return date.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+      }
+    } catch (error) {
+      console.error("Error formatting date:", error, "Input:", dateInput);
+      return "Just now";
+    }
+  };
+
+  // Helper function to get full date tooltip
+  const getFullDateTooltip = (dateInput) => {
+    if (!dateInput) return "No timestamp available";
+
+    try {
+      let date;
+      if (typeof dateInput === 'number') {
+        date = new Date(dateInput);
+      } else if (typeof dateInput === 'string' && /^\d+$/.test(dateInput)) {
+        const timestamp = parseInt(dateInput, 10);
+        date = new Date(timestamp.toString().length === 10 ? timestamp * 1000 : timestamp);
+      } else {
+        date = new Date(dateInput);
+      }
+
+      if (isNaN(date.getTime())) return "Invalid timestamp";
+
+      return date.toLocaleString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      });
+    } catch (error) {
+      return "Invalid timestamp";
+    }
+  };
+
+  // Helper function to determine if messages should be grouped
+  const shouldGroupWithPrevious = (currentMsg, previousMsg) => {
+    if (!previousMsg) return false;
+    
+    // Same sender
+    if (currentMsg.sender !== previousMsg.sender) return false;
+    
+    // Within 2 minutes of each other
+    const currentTime = new Date(currentMsg.createdAt).getTime();
+    const previousTime = new Date(previousMsg.createdAt).getTime();
+    const diffMinutes = (currentTime - previousTime) / (1000 * 60);
+    
+    return diffMinutes <= 2;
+  };
+
+  // Helper function to get sender display name
+  const getSenderDisplayName = (sender) => {
+    switch (sender?.toLowerCase()) {
+      case 'user':
+        return 'You';
+      case 'ai':
+        return 'AI Assistant';
+      case 'admin':
+        return 'Support Agent';
+      case 'technician':
+        return 'Technician';
+      default:
+        return sender || 'Unknown';
+    }
+  };
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (inputText.trim() === "") return;
 
     const tempId = `temp-${Date.now()}`;
+    const now = new Date().toISOString();
     const tempMessage = {
       id: tempId,
       sender: "user",
       message: inputText,
       messageType: "text",
       voiceUrl: null,
-      createdAt: new Date().toISOString(),
+      createdAt: now,
       __typename: "ChatMessage",
       isOptimistic: true // Mark as optimistic
     };
@@ -111,14 +274,16 @@ const TicketChat = ({ ticketId }) => {
     if (!audioBlob) return;
 
     const tempId = `temp-${Date.now()}`;
+    const now = new Date().toISOString();
     const tempMessage = {
       id: tempId,
       sender: "user",
       message: "Voice message...",
       messageType: "voice",
       voiceUrl: null,
-      createdAt: new Date().toISOString(),
-      __typename: "ChatMessage"
+      createdAt: now,
+      __typename: "ChatMessage",
+      isOptimistic: true
     };
 
     // Optimistic update
@@ -231,58 +396,8 @@ const TicketChat = ({ ticketId }) => {
     }
   };
 
-    // Format date using moment
-    const formatDate = (dateInput) => {
-      // Handle null/undefined
-      if (!dateInput) return "Just now";
-
-      let date;
-
-      // Case 1: It's a number (Unix timestamp in milliseconds)
-      if (typeof dateInput === 'number') {
-        date = new Date(dateInput);
-      }
-      // Case 2: It's a string that could be a number (e.g., '1747001394128')
-      else if (typeof dateInput === 'string' && /^\d+$/.test(dateInput)) {
-        date = new Date(parseInt(dateInput, 10));
-      }
-      // Case 3: It's an ISO string or other date string
-      else if (typeof dateInput === 'string') {
-        date = new Date(dateInput);
-      }
-      // Case 4: It's already a Date object
-      else if (dateInput instanceof Date) {
-        date = dateInput;
-      }
-      // Case 5: It's a MongoDB object with $date field
-      else if (dateInput.$date) {
-        date = new Date(dateInput.$date);
-      }
-      // All other cases
-      else {
-        return "Just now";
-      }
-
-      // Final validation
-      if (isNaN(date.getTime())) {
-        console.error("Invalid date input:", dateInput);
-        return "Just now";
-      }
-
-      const now = new Date();
-      const diffSeconds = Math.floor((now - date) / 1000);
-
-      if (diffSeconds < 60) return "Just now";
-      
-      // Format as "3:45 PM"
-      return date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit'
-      });
-    };
-
-
-    const displayMessages = messages.filter(msg => {
+  // Filter and process messages
+  const displayMessages = messages.filter(msg => {
     if (msg.isOptimistic) {
       // Only show if we haven't received the real message yet
       return !messages.some(m => !m.isOptimistic && m.createdAt === msg.createdAt);
@@ -290,30 +405,40 @@ const TicketChat = ({ ticketId }) => {
     return true;
   });
 
-  // Group consecutive messages from same sender
-  const groupedMessages = displayMessages.reduce((groups, message) => {
-    const lastGroup = groups[groups.length - 1];
-    if (lastGroup && lastGroup[0].sender === message.sender) {
-      lastGroup.push(message);
-    } else {
-      groups.push([message]);
-    }
-    return groups;
-  }, []);
-
   if (messagesLoading || ticketLoading) {
     return <Loader />;
   }
 
-  // const groupedMessages = groupMessages(messages);
-
   return (
     <div className="flex flex-col bg-background p-6 h-full">
+      {/* Ticket Info Header */}
+      <div className="mb-4 bg-card p-4 rounded-xl border border-border">
+        <h2 className="text-lg font-semibold mb-2">
+          Ticket #{ticketId?.slice(-8)} - {ticket?.description}
+        </h2>
+        <div className="flex gap-2 items-center">
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            ticket?.status === 'open' ? 'bg-yellow-100 text-yellow-800' :
+            ticket?.status === 'in-progress' ? 'bg-blue-100 text-blue-800' :
+            'bg-green-100 text-green-800'
+          }`}>
+            {ticket?.status?.replace('-', ' ') || 'Unknown'}
+          </span>
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            ticket?.priority === 'high' ? 'bg-red-100 text-red-800' :
+            ticket?.priority === 'medium' ? 'bg-orange-100 text-orange-800' :
+            'bg-blue-100 text-blue-800'
+          }`}>
+            {ticket?.priority || 'normal'} priority
+          </span>
+        </div>
+      </div>
+
       {/* Priority and Call Buttons */}
       {ticket?.priority === "high" && (
         <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-500 rounded-r flex items-center justify-between">
           <span className="text-red-700 font-semibold">
-            High Priority Ticket
+            High Priority Ticket - Call Support Available
           </span>
           <div className="flex gap-2">
             <button
@@ -335,53 +460,106 @@ const TicketChat = ({ ticketId }) => {
       )}
 
       {/* Chat Messages */}
-      <div className="flex-1 overflow-y-auto mb-6">
-        <div className="max-w-2xl mx-auto">
-          {groupedMessages.map((messageGroup, groupIndex) => (
-        <div key={`group-${groupIndex}`} className={`flex ${messageGroup[0].sender === "user" ? "justify-end" : "justify-start"} mb-3`}>
-              <div className="flex flex-col space-y-1 max-w-[70%]">
-                {messageGroup.map((msg, msgIndex) => (
+      <div className="flex-1 overflow-y-auto mb-6 bg-card rounded-xl p-4 border border-border">
+        <div className="max-w-full">
+          {displayMessages.length === 0 ? (
+            <div className="text-center text-gray-500 py-8">
+              <p className="text-lg mb-2">No messages yet</p>
+              <p className="text-sm">Start the conversation by sending a message below</p>
+            </div>
+          ) : (
+            displayMessages.map((msg, index) => {
+              const previousMsg = index > 0 ? displayMessages[index - 1] : null;
+              const isGrouped = shouldGroupWithPrevious(msg, previousMsg);
+              
+              return (
+                <div key={msg.id} className={`${isGrouped ? 'mt-1' : 'mt-4'}`}>
                   <div
-                    key={msg.id}
-                    className={`p-3 rounded-xl ${
-                      msg.sender === "user"
-                        ? "bg-primary text-white rounded-br-none"
-                        : msg.sender === "ai"
-                        ? "bg-purple-100 text-foreground border border-purple-200 rounded-bl-none"
-                        : "bg-card text-foreground border border-border rounded-bl-none"
-                    } ${
-                      msgIndex === 0 ? 'rounded-tl-xl' : 'rounded-tl-sm'
-                    } ${
-                      msgIndex === messageGroup.length - 1 ? 'rounded-bl-xl' : 'rounded-bl-sm'
+                    className={`flex ${
+                      msg.sender === "user" ? "justify-end" : "justify-start"
                     }`}
                   >
-                    {msgIndex === 0 && (
-                      <p className="text-xs font-semibold mb-1">
-                        {msg.sender === "user" ? "You" : 
-                         msg.sender === "ai" ? "AI Assistant" : "Support Agent"}
-                      </p>
-                    )}
-                    {msg.messageType === 'voice' ? (
-                      <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => playAudio(msg.voiceUrl, msg.message)}
-                          className="p-2 rounded-full bg-white bg-opacity-20 hover:bg-opacity-30"
-                        >
-                          <FiVolume2 size={16} />
-                        </button>
-                        <span>{msg.message || "Voice message"}</span>
+                    <div className="max-w-[80%] md:max-w-[70%]">
+                      {/* Show sender name and timestamp for non-grouped messages */}
+                      {!isGrouped && (
+                        <div className={`flex items-center justify-between mb-1 ${
+                          msg.sender === "user" ? "flex-row-reverse" : "flex-row"
+                        }`}>
+                          <span className="text-xs font-medium text-gray-600">
+                            {getSenderDisplayName(msg.sender)}
+                          </span>
+                          <span 
+                            className="text-xs text-gray-500 mx-2 cursor-help" 
+                            title={getFullDateTooltip(msg.createdAt)}
+                          >
+                            {formatDate(msg.createdAt)}
+                          </span>
+                        </div>
+                      )}
+                      
+                      <div
+                        className={`p-3 rounded-lg ${
+                          msg.sender === "user"
+                            ? "bg-primary text-white rounded-br-sm"
+                            : msg.sender === "ai"
+                            ? "bg-purple-50 text-gray-800 border border-purple-200 rounded-bl-sm"
+                            : "bg-gray-100 text-gray-800 border border-gray-200 rounded-bl-sm"
+                        } ${msg.isOptimistic ? 'opacity-70' : ''}`}
+                      >
+                        {/* Voice message handling */}
+                        {msg.messageType === 'voice' ? (
+                          <div className="flex items-center gap-3">
+                            <button 
+                              onClick={() => playAudio(msg.voiceUrl, msg.message)}
+                              className={`p-2 rounded-full transition-colors ${
+                                msg.sender === "user" 
+                                  ? "bg-white bg-opacity-20 hover:bg-opacity-30" 
+                                  : "bg-gray-200 hover:bg-gray-300"
+                              }`}
+                              title="Play voice message"
+                            >
+                              <FiVolume2 size={16} />
+                            </button>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-12 h-2 bg-current opacity-30 rounded-full"></div>
+                                <span className="text-xs opacity-70">Voice message</span>
+                              </div>
+                              {msg.message && msg.message !== "Voice message..." && (
+                                <p className="text-sm mt-1">{msg.message}</p>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-sm whitespace-pre-wrap">{msg.message}</p>
+                            {msg.isOptimistic && (
+                              <div className="flex items-center gap-1 mt-1">
+                                <div className="w-1 h-1 bg-current rounded-full animate-bounce"></div>
+                                <div className="w-1 h-1 bg-current rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                                <div className="w-1 h-1 bg-current rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                <span className="text-xs opacity-70 ml-1">Sending...</span>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Show timestamp for grouped messages on hover */}
+                        {isGrouped && (
+                          <div 
+                            className="text-xs opacity-0 hover:opacity-70 transition-opacity mt-1 cursor-help"
+                            title={getFullDateTooltip(msg.createdAt)}
+                          >
+                            {formatDate(msg.createdAt)}
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <p className="text-sm">{msg.message}</p>
-                    )}
-                    <p className="text-xs opacity-70 mt-1">
-                      {formatDate(msg.createdAt)}
-                    </p>
+                    </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ))}
+                </div>
+              );
+            })
+          )}
           <div ref={chatEndRef} />
         </div>
       </div>
@@ -389,59 +567,74 @@ const TicketChat = ({ ticketId }) => {
       {/* Input Area */}
       <form
         onSubmit={handleSendMessage}
-        className="max-w-2xl mx-auto w-full bg-card p-4 rounded-xl border border-border"
+        className="bg-card p-4 rounded-xl border border-border"
       >
         {audioBlob ? (
-          <div className="flex items-center gap-2 mb-2">
-            <audio src={URL.createObjectURL(audioBlob)} controls />
-            <button
-              type="button"
-              onClick={() => setAudioBlob(null)}
-              className="text-red-500 hover:text-red-700"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSendVoiceMessage}
-              className="ml-auto bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600"
-            >
-              Send Voice
-            </button>
+          <div className="flex items-center gap-3 mb-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-800 mb-2">Voice message recorded</p>
+              <audio src={URL.createObjectURL(audioBlob)} controls className="w-full" />
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAudioBlob(null)}
+                className="px-3 py-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSendVoiceMessage}
+                className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition font-medium"
+              >
+                Send Voice
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={`p-2 rounded-full ${
-                isRecording 
-                  ? 'text-white bg-red-500 animate-pulse' 
-                  : 'text-foreground hover:text-primary'
-              } transition`}
-              onClick={isRecording ? stopRecording : startRecording}
-              title={isRecording ? "Stop recording" : "Start recording"}
-            >
-              <FiMic size={20} />
-            </button>
+        ) : null}
 
-            <input
-              type="text"
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 p-2 rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className={`p-3 rounded-full transition-all ${
+              isRecording 
+                ? 'text-white bg-red-500 animate-pulse shadow-lg' 
+                : 'text-foreground hover:text-primary hover:bg-primary/10'
+            }`}
+            onClick={isRecording ? stopRecording : startRecording}
+            title={isRecording ? "Stop recording" : "Start voice recording"}
+          >
+            <FiMic size={20} />
+          </button>
 
-            <button
-              type="submit"
-              className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition disabled:opacity-50"
-              disabled={inputText.trim() === ""}
-            >
-              <FiSend size={20} />
-            </button>
+          <input
+            type="text"
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            placeholder={isRecording ? "Recording..." : "Type your message..."}
+            className="flex-1 p-3 rounded-lg bg-background border border-border focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            disabled={isRecording}
+          />
+
+          <button
+            type="submit"
+            className="p-3 bg-primary text-white rounded-lg hover:bg-primary/90 active:bg-primary/80 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={inputText.trim() === "" || isRecording}
+          >
+            <FiSend size={20} />
+          </button>
+        </div>
+
+        {isRecording && (
+          <div className="mt-3 text-center">
+            <p className="text-sm text-red-600 font-medium">
+              🔴 Recording... Click the microphone again to stop
+            </p>
           </div>
         )}
       </form>
+
     </div>
   );
 };
